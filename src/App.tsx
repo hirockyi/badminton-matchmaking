@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { Player, Round } from './logic/types';
 import {
   DEFAULT_COURT_COUNT,
+  DEFAULT_PLAYER_COUNT,
   DEFAULT_LOOKAHEAD_ROUNDS,
   DEFAULT_STAMINA,
   PLAYERS_PER_COURT,
@@ -16,13 +17,16 @@ import { ConfirmedRounds } from './components/ConfirmedRounds';
 import { Statistics } from './components/Statistics';
 
 function createInitialPlayers(): Player[] {
-  return [1, 2, 3, 4].map((num) => ({
-    id: `player-${num}`,
-    name: String(num),
-    active: true,
-    joinedAtRound: 0,
-    stamina: DEFAULT_STAMINA,
-  }));
+  return Array.from({ length: DEFAULT_PLAYER_COUNT }, (_, i) => {
+    const num = i + 1;
+    return {
+      id: `player-${num}`,
+      name: String(num),
+      active: true,
+      joinedAtRound: 0,
+      stamina: DEFAULT_STAMINA,
+    };
+  });
 }
 
 export default function App() {

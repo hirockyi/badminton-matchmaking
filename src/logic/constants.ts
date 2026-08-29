@@ -13,7 +13,12 @@ export const DEFAULT_LOOKAHEAD_ROUNDS = 5;
 /**
  * Default number of courts.
  */
-export const DEFAULT_COURT_COUNT = 1;
+export const DEFAULT_COURT_COUNT = 2;
+
+/**
+ * Default initial number of players.
+ */
+export const DEFAULT_PLAYER_COUNT = 8;
 
 /**
  * Players per court (doubles = 4).
