@@ -133,8 +133,12 @@ export const Statistics: React.FC<StatisticsProps> = ({ players, confirmedRounds
                     )}
                   </td>
                   <td className="px-2 py-2 text-center text-slate-500">{stat.benchCount}</td>
-                  <td className="px-2 py-2 text-center text-amber-400 tracking-tighter text-[11px]">
-                    {'★'.repeat(stat.stamina)}
+                  <td className="px-2 py-2 text-center">
+                    <span className="inline-flex gap-0.5 text-rose-500 text-[10px]">
+                      {Array.from({ length: stat.stamina }).map((_, i) => (
+                        <span key={i}>❤️</span>
+                      ))}
+                    </span>
                   </td>
                 </tr>
               ))}
