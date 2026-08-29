@@ -4,13 +4,15 @@ import {
   WEIGHT_OPPONENT_DUPLICATION,
   WEIGHT_CONSECUTIVE_PLAY,
   WEIGHT_CONSECUTIVE_REST,
-  WEIGHT_PLAY_COUNT_FAIRNESS,
   WEIGHT_STAMINA_FIT,
-  STAMINA_TARGET_RATES,
+  PLAYERS_PER_COURT,
+  STAMINA_RELATIVE_WEIGHTS,
+  STAMINA_CONSECUTIVE_PLAY_MULTIPLIER,
+  STAMINA_CONSECUTIVE_REST_MULTIPLIER,
 } from './constants';
 
 // Helper: get all player IDs playing in a round's matches
-function getPlayingPlayerIds(matches: Match[]): Set<string> {
+export function getPlayingPlayerIds(matches: Match[]): Set<string> {
   const ids = new Set<string>();
   for (const m of matches) {
     ids.add(m.team1[0]);
@@ -22,7 +24,7 @@ function getPlayingPlayerIds(matches: Match[]): Set<string> {
 }
 
 // Helper: get all pairs from matches (within same team)
-function getPairs(matches: Match[]): [string, string][] {
+export function getPairs(matches: Match[]): [string, string][] {
   const pairs: [string, string][] = [];
   for (const m of matches) {
     pairs.push(sortPair(m.team1[0], m.team1[1]));
@@ -32,10 +34,9 @@ function getPairs(matches: Match[]): [string, string][] {
 }
 
 // Helper: get all opponent pairs (cross-team)
-function getOpponentPairs(matches: Match[]): [string, string][] {
+export function getOpponentPairs(matches: Match[]): [string, string][] {
   const pairs: [string, string][] = [];
   for (const m of matches) {
-    // Each player on team1 faces each player on team2
     for (const p1 of m.team1) {
       for (const p2 of m.team2) {
         pairs.push(sortPair(p1, p2));
@@ -55,15 +56,44 @@ function pairKey(a: string, b: string): string {
 }
 
 /**
+ * Calculate capacity-aware dynamic target play rates for each active player,
+ * considering the court capacity to player count ratio and stamina weighting.
+ */
+export function calcDynamicTargetPlayRates(
+  activePlayers: Player[],
+  courtCount: number
+): Map<string, number> {
+  const targetMap = new Map<string, number>();
+  if (activePlayers.length === 0) return targetMap;
+
+  const courtSlots = courtCount * PLAYERS_PER_COURT;
+  const baseRate = Math.min(1.0, courtSlots / activePlayers.length);
+
+  // Calculate mean stamina relative weight among active players
+  const totalWeight = activePlayers.reduce(
+    (sum, p) => sum + (STAMINA_RELATIVE_WEIGHTS[p.stamina] ?? 1.0),
+    0
+  );
+  const avgWeight = totalWeight / activePlayers.length;
+
+  for (const player of activePlayers) {
+    const playerWeight = STAMINA_RELATIVE_WEIGHTS[player.stamina] ?? 1.0;
+    // Scale the base rate by the ratio of this player's weight to the group average
+    const targetRate = Math.min(1.0, Math.max(0.0, baseRate * (playerWeight / avgWeight)));
+    targetMap.set(player.id, targetRate);
+  }
+
+  return targetMap;
+}
+
+/**
  * Pair duplication penalty.
- * Counts how many times the proposed pairs have appeared in history.
- * Returns sum of historical pair counts for all pairs in the candidate.
+ * Sum of historical pair frequencies for all pairs in the candidate.
  */
 export function calcPairDuplicationPenalty(
   candidate: RoundCandidate,
   confirmedRounds: Round[]
 ): number {
-  // Build historical pair count map
   const pairCounts = new Map<string, number>();
   for (const round of confirmedRounds) {
     for (const pair of getPairs(round.matches)) {
@@ -82,7 +112,7 @@ export function calcPairDuplicationPenalty(
 
 /**
  * Opponent duplication penalty.
- * Counts how many times the proposed opponent matchups have appeared in history.
+ * Sum of historical opponent matchup frequencies for all matchups in the candidate.
  */
 export function calcOpponentDuplicationPenalty(
   candidate: RoundCandidate,
@@ -105,101 +135,74 @@ export function calcOpponentDuplicationPenalty(
 }
 
 /**
- * Consecutive play penalty.
- * Counts how many players in the candidate also played in the last round.
- * Only applies when there are more active players than court slots.
+ * Consecutive play penalty weighted by player stamina.
+ * Stamina 1 gets massive penalty for playing consecutively.
+ * Stamina 5 gets 0 penalty.
  */
 export function calcConsecutivePlayPenalty(
   candidate: RoundCandidate,
-  lastRound: Round | null
+  lastRound: Round | null,
+  playersById: Map<string, Player>
 ): number {
   if (!lastRound) return 0;
   const lastPlaying = getPlayingPlayerIds(lastRound.matches);
   const currentPlaying = getPlayingPlayerIds(candidate.matches);
+
   let penalty = 0;
   for (const id of currentPlaying) {
-    if (lastPlaying.has(id)) penalty += 1;
+    if (lastPlaying.has(id)) {
+      const player = playersById.get(id);
+      const stamina = player?.stamina ?? 3;
+      const multiplier = STAMINA_CONSECUTIVE_PLAY_MULTIPLIER[stamina] ?? 1.0;
+      penalty += multiplier;
+    }
   }
   return penalty;
 }
 
 /**
- * Consecutive rest penalty.
- * Counts how many players who rested last round are also resting this round.
+ * Consecutive rest penalty weighted by player stamina.
+ * Stamina 5 gets heavy penalty for resting back-to-back.
+ * Stamina 1 gets 0 penalty (resting is good).
  */
 export function calcConsecutiveRestPenalty(
   candidate: RoundCandidate,
-  lastRound: Round | null
+  lastRound: Round | null,
+  playersById: Map<string, Player>
 ): number {
   if (!lastRound) return 0;
   const lastBench = new Set(lastRound.benchPlayerIds);
+
   let penalty = 0;
   for (const id of candidate.benchPlayerIds) {
-    if (lastBench.has(id)) penalty += 1;
+    if (lastBench.has(id)) {
+      const player = playersById.get(id);
+      const stamina = player?.stamina ?? 3;
+      const multiplier = STAMINA_CONSECUTIVE_REST_MULTIPLIER[stamina] ?? 1.0;
+      penalty += multiplier;
+    }
   }
   return penalty;
-}
-
-/**
- * Play count fairness penalty.
- * Measures how unevenly players have played relative to their available rounds.
- * Uses standard deviation of play rates (games played / games available since join).
- * Takes into account joinedAtRound for mid-session joins.
- */
-export function calcPlayCountFairnessPenalty(
-  candidate: RoundCandidate,
-  confirmedRounds: Round[],
-  players: Player[],
-  currentRoundIndex: number
-): number {
-  const currentPlaying = getPlayingPlayerIds(candidate.matches);
-  
-  // Calculate play rate for each active player if this candidate is used
-  const rates: number[] = [];
-  for (const player of players) {
-    if (!player.active) continue;
-    const availableRounds = currentRoundIndex - player.joinedAtRound + 1;
-    if (availableRounds <= 0) continue;
-    
-    // Count historical games
-    let gamesPlayed = 0;
-    for (const round of confirmedRounds) {
-      if (getPlayingPlayerIds(round.matches).has(player.id)) {
-        gamesPlayed++;
-      }
-    }
-    // Add this candidate
-    if (currentPlaying.has(player.id)) {
-      gamesPlayed++;
-    }
-    
-    rates.push(gamesPlayed / availableRounds);
-  }
-
-  if (rates.length < 2) return 0;
-
-  // Standard deviation of play rates
-  const mean = rates.reduce((a, b) => a + b, 0) / rates.length;
-  const variance = rates.reduce((sum, r) => sum + (r - mean) ** 2, 0) / rates.length;
-  return Math.sqrt(variance) * 10; // Scale up for meaningful penalty
 }
 
 /**
  * Stamina fit penalty.
- * Measures deviation of each player's play rate from their stamina-based target.
- * Sum of squared differences between actual play rate and target play rate.
+ * Measures deviation of each active player's cumulative play rate from their
+ * capacity-aware dynamic target play rate, accounting for joinedAtRound.
  */
 export function calcStaminaFitPenalty(
   candidate: RoundCandidate,
   confirmedRounds: Round[],
-  players: Player[],
-  currentRoundIndex: number
+  activePlayers: Player[],
+  currentRoundIndex: number,
+  courtCount: number
 ): number {
   const currentPlaying = getPlayingPlayerIds(candidate.matches);
+  const targetRates = calcDynamicTargetPlayRates(activePlayers, courtCount);
+
   let totalPenalty = 0;
 
-  for (const player of players) {
-    if (!player.active) continue;
+  for (const player of activePlayers) {
     const availableRounds = currentRoundIndex - player.joinedAtRound + 1;
     if (availableRounds <= 0) continue;
 
@@ -214,39 +217,48 @@ export function calcStaminaFitPenalty(
     }
 
     const actualRate = gamesPlayed / availableRounds;
-    const targetRate = STAMINA_TARGET_RATES[player.stamina] ?? 1.0;
+    const targetRate = targetRates.get(player.id) ?? 0.8;
+
+    // Squared deviation from capacity-aware target
     totalPenalty += (actualRate - targetRate) ** 2;
   }
 
-  return totalPenalty * 10; // Scale up
+  return totalPenalty * 10;
 }
 
 /**
  * Calculate total score for a candidate round.
  * Higher score = better candidate.
- * Score starts at 0, penalties are subtracted with their weights.
  */
 export function scoreCandidate(
   candidate: RoundCandidate,
   confirmedRounds: Round[],
-  players: Player[],
+  allPlayers: Player[],
+  activePlayers: Player[],
   currentRoundIndex: number,
-  lastRound: Round | null
+  lastRound: Round | null,
+  courtCount: number
 ): number {
+  const playersById = new Map<string, Player>(allPlayers.map((p) => [p.id, p]));
+
   const pairPenalty = calcPairDuplicationPenalty(candidate, confirmedRounds);
   const opponentPenalty = calcOpponentDuplicationPenalty(candidate, confirmedRounds);
-  const consecutivePlayPenalty = calcConsecutivePlayPenalty(candidate, lastRound);
-  const consecutiveRestPenalty = calcConsecutiveRestPenalty(candidate, lastRound);
-  const fairnessPenalty = calcPlayCountFairnessPenalty(candidate, confirmedRounds, players, currentRoundIndex);
-  const staminaPenalty = calcStaminaFitPenalty(candidate, confirmedRounds, players, currentRoundIndex);
+  const consecutivePlayPenalty = calcConsecutivePlayPenalty(candidate, lastRound, playersById);
+  const consecutiveRestPenalty = calcConsecutiveRestPenalty(candidate, lastRound, playersById);
+  const staminaFitPenalty = calcStaminaFitPenalty(
+    candidate,
+    confirmedRounds,
+    activePlayers,
+    currentRoundIndex,
+    courtCount
+  );
 
   const score =
     - WEIGHT_PAIR_DUPLICATION * pairPenalty
     - WEIGHT_OPPONENT_DUPLICATION * opponentPenalty
     - WEIGHT_CONSECUTIVE_PLAY * consecutivePlayPenalty
     - WEIGHT_CONSECUTIVE_REST * consecutiveRestPenalty
-    - WEIGHT_PLAY_COUNT_FAIRNESS * fairnessPenalty
-    - WEIGHT_STAMINA_FIT * staminaPenalty;
+    - WEIGHT_STAMINA_FIT * staminaFitPenalty;
 
   return score;
 }

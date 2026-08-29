@@ -62,9 +62,7 @@ export function generateRound(
     : null;
 
   // Ensure we have enough players
-  const totalSlots = courtCount * PLAYERS_PER_COURT;
   if (activePlayers.length < PLAYERS_PER_COURT) {
-    // Not enough players for even one court
     return {
       roundIndex: currentRoundIndex,
       matches: [],
@@ -88,8 +86,10 @@ export function generateRound(
       candidate,
       confirmedRounds,
       allPlayers,
+      activePlayers,
       currentRoundIndex,
-      lastRound
+      lastRound,
+      effectiveCourtCount
     );
     candidate.score = score;
 
@@ -120,7 +120,6 @@ export function generateMultipleRounds(
   count: number
 ): Round[] {
   const rounds: Round[] = [];
-  // Build up a virtual history: confirmed rounds + previously generated lookahead rounds
   const virtualHistory = [...confirmedRounds];
 
   for (let i = 0; i < count; i++) {
@@ -153,7 +152,10 @@ export function regenerateRound(
   allPlayers: Player[],
   roundIndex: number
 ): Round {
-  const virtualHistory = [...confirmedRounds, ...pendingRoundsBefore.map(r => ({ ...r, status: 'confirmed' as const }))];
+  const virtualHistory = [
+    ...confirmedRounds,
+    ...pendingRoundsBefore.map((r) => ({ ...r, status: 'confirmed' as const })),
+  ];
   return generateRound(
     activePlayers,
     courtCount,

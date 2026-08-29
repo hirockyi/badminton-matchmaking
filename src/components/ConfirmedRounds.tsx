@@ -12,9 +12,13 @@ export const ConfirmedRounds: React.FC<ConfirmedRoundsProps> = ({ rounds, player
 
   if (rounds.length === 0) {
     return (
-      <div className="w-full bg-white p-4 rounded shadow-sm">
-        <h2 className="text-lg font-bold text-gray-800 mb-2">📋 確定済み履歴</h2>
-        <p className="text-sm text-gray-500 text-center py-4">まだ確定されたラウンドはありません</p>
+      <div>
+        <h2 className="text-sm font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+          <span>📋</span> 確定済み試合履歴
+        </h2>
+        <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded-xl mt-2 border border-slate-100">
+          まだ確定された試合はありません
+        </p>
       </div>
     );
   }
@@ -33,29 +37,44 @@ export const ConfirmedRounds: React.FC<ConfirmedRoundsProps> = ({ rounds, player
   const reversedRounds = [...rounds].sort((a, b) => b.roundIndex - a.roundIndex);
 
   return (
-    <div className="w-full bg-white p-4 rounded shadow-sm">
-      <h2 className="text-lg font-bold text-gray-800 mb-4">📋 確定済み履歴</h2>
-      
-      <div className="space-y-2">
-        {reversedRounds.map(round => {
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+          <span>📋</span> 確定済み試合履歴
+        </h2>
+        <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-semibold">
+          {rounds.length} 件
+        </span>
+      </div>
+
+      <div className="space-y-2 mt-2">
+        {reversedRounds.map((round) => {
           const isExpanded = expandedIndices.has(round.roundIndex);
-          
+
           return (
-            <div key={round.roundIndex} className="border rounded overflow-hidden">
+            <div
+              key={round.roundIndex}
+              className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs"
+            >
               <button
+                type="button"
                 onClick={() => toggleExpand(round.roundIndex)}
-                className="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 flex justify-between items-center focus:outline-none"
+                className="w-full px-3 py-2.5 bg-slate-100/70 hover:bg-slate-200/70 active:bg-slate-200 flex justify-between items-center text-left focus:outline-none transition-colors"
               >
-                <span className="font-medium text-gray-700">ラウンド {round.roundIndex + 1}</span>
-                <span className="text-gray-400 text-sm">{isExpanded ? '▲ 閉じる' : '▼ 開く'}</span>
+                <span className="font-bold text-xs text-slate-700">
+                  第 {round.roundIndex + 1} 試合
+                </span>
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {isExpanded ? '▲ 閉じる' : '▼ 表示'}
+                </span>
               </button>
-              
+
               {isExpanded && (
-                <div className="p-4 border-t bg-gray-50/50">
+                <div className="p-2.5 bg-white border-t border-slate-200">
                   <RoundCard
                     round={round}
                     players={players}
-                    activePlayers={[]} // No needed for confirmed round
+                    activePlayers={[]}
                     onRoundChange={() => {}}
                     onRegenerate={() => {}}
                     onConfirm={() => {}}

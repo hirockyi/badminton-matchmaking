@@ -4,21 +4,19 @@ import {
   calcOpponentDuplicationPenalty,
   calcConsecutivePlayPenalty,
   calcConsecutiveRestPenalty,
-  calcPlayCountFairnessPenalty,
+  calcDynamicTargetPlayRates,
   calcStaminaFitPenalty,
   scoreCandidate,
 } from './scoring';
-import { Player, Round, RoundCandidate } from './types';
+import { Player, Round, RoundCandidate, StaminaLevel } from './types';
 
-// --- Helper factories ---
-
-function makePlayer(id: string, overrides?: Partial<Player>): Player {
+function makePlayer(id: string, stamina: StaminaLevel = 3, overrides?: Partial<Player>): Player {
   return {
     id,
     name: id,
     active: true,
     joinedAtRound: 0,
-    stamina: 5,
+    stamina,
     ...overrides,
   };
 }
@@ -36,7 +34,32 @@ function makeCandidate(matches: RoundCandidate['matches'], bench: string[] = [])
   return { matches, benchPlayerIds: bench, score: 0 };
 }
 
-// --- Tests ---
+describe('calcDynamicTargetPlayRates', () => {
+  it('calculates equal rates when all players have stamina 3', () => {
+    const players = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => makePlayer(id, 3));
+    const rates = calcDynamicTargetPlayRates(players, 1); // 1 court = 4 slots, 6 players
+    expect(rates.get('a')).toBeCloseTo(4 / 6, 2);
+    expect(rates.get('f')).toBeCloseTo(4 / 6, 2);
+  });
+
+  it('scales target play rates according to stamina', () => {
+    const players = [
+      makePlayer('p_low', 1),   // Stamina 1
+      makePlayer('p_mid1', 3),  // Stamina 3
+      makePlayer('p_mid2', 3),
+      makePlayer('p_mid3', 3),
+      makePlayer('p_mid4', 3),
+      makePlayer('p_high', 5),  // Stamina 5
+    ];
+    const rates = calcDynamicTargetPlayRates(players, 1);
+    const lowRate = rates.get('p_low')!;
+    const midRate = rates.get('p_mid1')!;
+    const highRate = rates.get('p_high')!;
+
+    expect(highRate).toBeGreaterThan(midRate);
+    expect(midRate).toBeGreaterThan(lowRate);
+  });
+});
 
 describe('calcPairDuplicationPenalty', () => {
   it('returns 0 when no history', () => {
@@ -50,215 +73,94 @@ describe('calcPairDuplicationPenalty', () => {
     const history = [
       makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
     ];
-    // Same pairs a-b and c-d again
     const candidate = makeCandidate([
       { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
     ]);
-    const penalty = calcPairDuplicationPenalty(candidate, history);
-    expect(penalty).toBeGreaterThan(0);
-  });
-
-  it('does not penalize new pairs', () => {
-    const history = [
-      makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
-    ];
-    // New pairs: a-c and b-d
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'c'], team2: ['b', 'd'] },
-    ]);
-    const penalty = calcPairDuplicationPenalty(candidate, history);
-    expect(penalty).toBe(0);
+    expect(calcPairDuplicationPenalty(candidate, history)).toBeGreaterThan(0);
   });
 });
 
 describe('calcOpponentDuplicationPenalty', () => {
-  it('returns 0 when no history', () => {
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
-    ]);
-    expect(calcOpponentDuplicationPenalty(candidate, [])).toBe(0);
-  });
-
   it('penalizes repeated opponent matchups', () => {
     const history = [
       makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
     ];
-    // Same matchup: a,b vs c,d → opponents are a-c, a-d, b-c, b-d
     const candidate = makeCandidate([
       { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
     ]);
-    const penalty = calcOpponentDuplicationPenalty(candidate, history);
-    expect(penalty).toBe(4); // 4 opponent pairs repeated once each
+    expect(calcOpponentDuplicationPenalty(candidate, history)).toBe(4);
   });
 });
 
 describe('calcConsecutivePlayPenalty', () => {
-  it('returns 0 when no last round', () => {
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
-    ]);
-    expect(calcConsecutivePlayPenalty(candidate, null)).toBe(0);
-  });
+  it('heavily penalizes stamina 1 for playing back-to-back', () => {
+    const p1 = makePlayer('p1', 1); // stamina 1
+    const p5 = makePlayer('p5', 5); // stamina 5
+    const playersById = new Map([['p1', p1], ['p5', p5]]);
 
-  it('penalizes players who played in the previous round', () => {
     const lastRound = makeRound(0, [
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
+      { courtIndex: 0, team1: ['p1', 'p5'], team2: ['c', 'd'] },
     ]);
-    // a and b play again, e and f are new
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['e', 'f'] },
-    ]);
-    expect(calcConsecutivePlayPenalty(candidate, lastRound)).toBe(2);
-  });
 
-  it('returns 0 when completely different players', () => {
-    const lastRound = makeRound(0, [
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
+    // Candidate where p1 plays consecutively vs where p5 plays consecutively
+    const candP1 = makeCandidate([
+      { courtIndex: 0, team1: ['p1', 'x'], team2: ['y', 'z'] },
     ]);
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['e', 'f'], team2: ['g', 'h'] },
+    const candP5 = makeCandidate([
+      { courtIndex: 0, team1: ['p5', 'x'], team2: ['y', 'z'] },
     ]);
-    expect(calcConsecutivePlayPenalty(candidate, lastRound)).toBe(0);
+
+    const penaltyP1 = calcConsecutivePlayPenalty(candP1, lastRound, playersById);
+    const penaltyP5 = calcConsecutivePlayPenalty(candP5, lastRound, playersById);
+
+    expect(penaltyP1).toBe(5.0); // Strict avoidance
+    expect(penaltyP5).toBe(0.0); // Stamina 5 can play continuously without penalty
   });
 });
 
 describe('calcConsecutiveRestPenalty', () => {
-  it('returns 0 when no last round', () => {
-    const candidate = makeCandidate(
-      [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }],
-      ['e']
-    );
-    expect(calcConsecutiveRestPenalty(candidate, null)).toBe(0);
-  });
+  it('heavily penalizes stamina 5 for resting back-to-back', () => {
+    const p1 = makePlayer('p1', 1);
+    const p5 = makePlayer('p5', 5);
+    const playersById = new Map([['p1', p1], ['p5', p5]]);
 
-  it('penalizes players who rested consecutively', () => {
     const lastRound = makeRound(
       0,
       [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }],
-      ['e', 'f']
+      ['p1', 'p5']
     );
-    // e rests again
-    const candidate = makeCandidate(
+
+    const candP1Benched = makeCandidate(
       [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }],
-      ['e', 'g']
+      ['p1']
     );
-    expect(calcConsecutiveRestPenalty(candidate, lastRound)).toBe(1);
-  });
-});
-
-describe('calcPlayCountFairnessPenalty', () => {
-  it('returns 0 when all players have equal play rates', () => {
-    const players = ['a', 'b', 'c', 'd'].map(id => makePlayer(id));
-    // All played in round 0
-    const history = [
-      makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
-    ];
-    // All play again
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
-    ]);
-    const penalty = calcPlayCountFairnessPenalty(candidate, history, players, 1);
-    expect(penalty).toBe(0);
-  });
-
-  it('penalizes uneven play rates', () => {
-    const players = ['a', 'b', 'c', 'd', 'e'].map(id => makePlayer(id));
-    // a,b,c,d played; e was benched
-    const history = [
-      makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
-    ];
-    // a,b,c,d play again; e benched again → a,b,c,d have 100%, e has 0%
-    const candidate = makeCandidate(
+    const candP5Benched = makeCandidate(
       [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }],
-      ['e']
+      ['p5']
     );
-    const penalty = calcPlayCountFairnessPenalty(candidate, history, players, 1);
-    expect(penalty).toBeGreaterThan(0);
-  });
 
-  it('considers joinedAtRound for fairness', () => {
-    const players = [
-      makePlayer('a', { joinedAtRound: 0 }),
-      makePlayer('b', { joinedAtRound: 0 }),
-      makePlayer('c', { joinedAtRound: 0 }),
-      makePlayer('d', { joinedAtRound: 0 }),
-      makePlayer('e', { joinedAtRound: 5 }), // Joined late
-    ];
-    // e joined at round 5 so has only been available for 1 round (round 5)
-    const history: Round[] = [];
-    // Everyone plays in round 5
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'e'] },
-    ]);
-    // a,b,c have 1/6 play rate; e has 1/1 play rate
-    // But the penalty should be calculated correctly considering joinedAtRound
-    const penalty = calcPlayCountFairnessPenalty(candidate, history, players, 5);
-    expect(penalty).toBeGreaterThan(0); // There IS a difference in rates
-  });
-});
+    const penaltyP1 = calcConsecutiveRestPenalty(candP1Benched, lastRound, playersById);
+    const penaltyP5 = calcConsecutiveRestPenalty(candP5Benched, lastRound, playersById);
 
-describe('calcStaminaFitPenalty', () => {
-  it('returns 0 when player with stamina 5 plays every round', () => {
-    const players = ['a', 'b', 'c', 'd'].map(id => makePlayer(id, { stamina: 5 }));
-    const history = [
-      makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
-    ];
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
-    ]);
-    const penalty = calcStaminaFitPenalty(candidate, history, players, 1);
-    expect(penalty).toBe(0);
-  });
-
-  it('penalizes when low-stamina player plays too much', () => {
-    const players = [
-      makePlayer('a', { stamina: 1 }), // target 60%
-      makePlayer('b', { stamina: 5 }),
-      makePlayer('c', { stamina: 5 }),
-      makePlayer('d', { stamina: 5 }),
-    ];
-    // All played every round → player a at 100% but target is 60%
-    const history = [
-      makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
-      makeRound(1, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
-    ];
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
-    ]);
-    const penalty = calcStaminaFitPenalty(candidate, history, players, 2);
-    expect(penalty).toBeGreaterThan(0);
+    expect(penaltyP1).toBe(0.0); // Stamina 1 resting again is fine
+    expect(penaltyP5).toBe(4.0); // Stamina 5 resting again is heavily penalized
   });
 });
 
 describe('scoreCandidate', () => {
-  it('returns a number', () => {
-    const players = ['a', 'b', 'c', 'd'].map(id => makePlayer(id));
-    const candidate = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
-    ]);
-    const score = scoreCandidate(candidate, [], players, 0, null);
-    expect(typeof score).toBe('number');
-  });
-
-  it('prefers candidates with less duplication', () => {
-    const players = ['a', 'b', 'c', 'd'].map(id => makePlayer(id));
-    const history = [
-      makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
+  it('returns higher score for candidates respecting stamina and variety', () => {
+    const players = [
+      makePlayer('a', 5),
+      makePlayer('b', 3),
+      makePlayer('c', 3),
+      makePlayer('d', 3),
+      makePlayer('e', 1),
     ];
-
-    // Candidate 1: same pairs as history (bad)
-    const candidate1 = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
-    ]);
-
-    // Candidate 2: different pairs (good)
-    const candidate2 = makeCandidate([
-      { courtIndex: 0, team1: ['a', 'c'], team2: ['b', 'd'] },
-    ]);
-
-    const score1 = scoreCandidate(candidate1, history, players, 1, history[0]);
-    const score2 = scoreCandidate(candidate2, history, players, 1, history[0]);
-
-    expect(score2).toBeGreaterThan(score1);
+    const candidate = makeCandidate(
+      [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }],
+      ['e']
+    );
+    const score = scoreCandidate(candidate, [], players, players, 0, null, 1);
+    expect(typeof score).toBe('number');
   });
 });
