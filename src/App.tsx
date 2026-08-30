@@ -62,6 +62,30 @@ export default function App() {
     return undefined;
   }, [activePlayers.length, courtCount, requiredPlayers]);
 
+  const handleInitialCourtCountChange = useCallback((newCourtCount: number) => {
+    setCourtCount(newCourtCount);
+    const targetPlayerCount = newCourtCount * PLAYERS_PER_COURT;
+
+    setPlayers((prev) => {
+      if (prev.length === targetPlayerCount) return prev;
+      if (prev.length > targetPlayerCount) {
+        return prev.slice(0, targetPlayerCount);
+      }
+      const updated = [...prev];
+      for (let i = prev.length; i < targetPlayerCount; i++) {
+        const num = i + 1;
+        updated.push({
+          id: `player-${num}`,
+          name: String(num),
+          active: true,
+          joinedAtRound: 0,
+          stamina: DEFAULT_STAMINA,
+        });
+      }
+      return updated;
+    });
+  }, []);
+
   // Initial Start Session / Next batch generate
   const handleGenerateNext = useCallback(() => {
     if (!canGenerate) return;
@@ -221,7 +245,7 @@ export default function App() {
             /* Screen 1: Required Initial Setup Screen */
             <InitialSetup
               courtCount={courtCount}
-              onCourtCountChange={setCourtCount}
+              onCourtCountChange={handleInitialCourtCountChange}
               players={players}
               onPlayersChange={handlePlayersChange}
               onAddPlayer={handleAddPlayer}
