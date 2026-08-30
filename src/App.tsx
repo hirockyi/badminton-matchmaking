@@ -6,14 +6,16 @@ import {
   DEFAULT_LOOKAHEAD_ROUNDS,
   DEFAULT_STAMINA,
   PLAYERS_PER_COURT,
-  MAX_SELECTABLE_COURTS,
 } from './logic/constants';
-import { generateMultipleRounds, regenerateRound } from './logic/matchGenerator';
-import { PlayerManager } from './components/PlayerManager';
-import { CourtSetting } from './components/CourtSetting';
-import { GenerateControl } from './components/GenerateControl';
-import { PendingRounds } from './components/PendingRounds';
-import { ConfirmedRounds } from './components/ConfirmedRounds';
+import {
+  generateMultipleRounds,
+  regenerateSingleRound,
+  regenerateSubsequentRounds,
+} from './logic/matchGenerator';
+import { InitialSetup } from './components/InitialSetup';
+import { MatchTimeline } from './components/MatchTimeline';
+import { SettingsModal } from './components/SettingsModal';
+import { RegenerateConfirmModal } from './components/RegenerateConfirmModal';
 import { Statistics } from './components/Statistics';
 
 function createInitialPlayers(): Player[] {
@@ -33,17 +35,20 @@ export default function App() {
   const [players, setPlayers] = useState<Player[]>(createInitialPlayers);
   const [courtCount, setCourtCount] = useState(DEFAULT_COURT_COUNT);
   const [lookaheadCount, setLookaheadCount] = useState(DEFAULT_LOOKAHEAD_ROUNDS);
-  const [confirmedRounds, setConfirmedRounds] = useState<Round[]>([]);
-  const [pendingRounds, setPendingRounds] = useState<Round[]>([]);
+  const [rounds, setRounds] = useState<Round[]>([]);
+
+  // Modals state
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [pendingRecalcPrompt, setPendingRecalcPrompt] = useState<{
+    roundIndex: number;
+    subsequentCount: number;
+  } | null>(null);
 
   const activePlayers = useMemo(
     () => players.filter((p) => p.active),
     [players]
   );
 
-  const nextRoundIndex = confirmedRounds.length;
-
-  // Calculate required players for the selected courts
   const requiredPlayers = courtCount * PLAYERS_PER_COURT;
   const canGenerate = activePlayers.length >= requiredPlayers;
 
@@ -57,68 +62,91 @@ export default function App() {
     return undefined;
   }, [activePlayers.length, courtCount, requiredPlayers]);
 
-  const handleGenerate = useCallback(() => {
+  // Initial Start Session / Next batch generate
+  const handleGenerateNext = useCallback(() => {
     if (!canGenerate) return;
-    const rounds = generateMultipleRounds(
+    const newRounds = generateMultipleRounds(
       activePlayers,
       courtCount,
-      confirmedRounds,
+      rounds,
       players,
-      nextRoundIndex,
+      rounds.length,
       lookaheadCount
     );
-    setPendingRounds(rounds);
-  }, [activePlayers, courtCount, confirmedRounds, players, nextRoundIndex, lookaheadCount, canGenerate]);
+    setRounds((prev) => [...prev, ...newRounds]);
+  }, [activePlayers, courtCount, rounds, players, lookaheadCount, canGenerate]);
 
-  const handleRegenerate = useCallback(
+  // Re-draw a single round in place
+  const handleRegenerateRound = useCallback(
     (roundIndex: number) => {
-      setPendingRounds((prev) => {
-        const idx = prev.findIndex((r) => r.roundIndex === roundIndex);
-        if (idx === -1) return prev;
-
-        // Rounds before this one in pending list serve as virtual history
-        const pendingBefore = prev.slice(0, idx);
-        const newRound = regenerateRound(
+      setRounds((prev) => {
+        const newRound = regenerateSingleRound(
           activePlayers,
           courtCount,
-          confirmedRounds,
-          pendingBefore,
+          prev,
           players,
           roundIndex
         );
-
         const updated = [...prev];
-        updated[idx] = newRound;
+        updated[roundIndex] = newRound;
         return updated;
       });
     },
-    [activePlayers, courtCount, confirmedRounds, players]
+    [activePlayers, courtCount, players]
   );
 
-  const handleConfirm = useCallback(
-    (roundIndex: number) => {
-      setPendingRounds((prev) => {
-        const idx = prev.findIndex((r) => r.roundIndex === roundIndex);
-        if (idx === -1) return prev;
+  // Delete / Undo a round
+  const handleDeleteRound = useCallback((roundIndex: number) => {
+    setRounds((prev) => {
+      const filtered = prev.filter((_, i) => i !== roundIndex);
+      // Re-index remaining rounds
+      return filtered.map((round, newIdx) => ({
+        ...round,
+        roundIndex: newIdx,
+      }));
+    });
+  }, []);
 
-        const round = { ...prev[idx], status: 'confirmed' as const };
-        setConfirmedRounds((cr) => [...cr, round]);
-
-        // Remove this round from pending
-        return prev.filter((_, i) => i !== idx);
+  // Update a round after manual edit
+  const handleUpdateRound = useCallback(
+    (roundIndex: number, updatedRound: Round, hasSubsequent: boolean) => {
+      setRounds((prev) => {
+        const updated = [...prev];
+        updated[roundIndex] = updatedRound;
+        return updated;
       });
+
+      if (hasSubsequent) {
+        setPendingRecalcPrompt({
+          roundIndex,
+          subsequentCount: rounds.length - (roundIndex + 1),
+        });
+      }
     },
-    []
+    [rounds.length]
   );
 
-  const handleRoundChange = useCallback(
-    (updatedRound: Round) => {
-      setPendingRounds((prev) =>
-        prev.map((r) => (r.roundIndex === updatedRound.roundIndex ? updatedRound : r))
+  // User chose to regenerate subsequent rounds after a manual edit
+  const handleConfirmRecalculateSubsequent = useCallback(() => {
+    if (!pendingRecalcPrompt) return;
+    const fromIndex = pendingRecalcPrompt.roundIndex + 1;
+
+    setRounds((prev) => {
+      return regenerateSubsequentRounds(
+        activePlayers,
+        courtCount,
+        prev,
+        players,
+        fromIndex
       );
-    },
-    []
-  );
+    });
+
+    setPendingRecalcPrompt(null);
+  }, [pendingRecalcPrompt, activePlayers, courtCount, players]);
+
+  const handleDismissRecalculate = useCallback(() => {
+    setPendingRecalcPrompt(null);
+  }, []);
 
   const handlePlayersChange = useCallback((newPlayers: Player[]) => {
     setPlayers(newPlayers);
@@ -126,7 +154,6 @@ export default function App() {
 
   const handleAddPlayer = useCallback(() => {
     setPlayers((prev) => {
-      // Find the highest numeric name or fallback to prev.length + 1
       let maxNum = 0;
       for (const p of prev) {
         const n = parseInt(p.name, 10);
@@ -141,101 +168,96 @@ export default function App() {
         id: uniqueId,
         name: String(nextNum),
         active: true,
-        joinedAtRound: nextRoundIndex,
+        joinedAtRound: rounds.length,
         stamina: DEFAULT_STAMINA,
       };
       return [...prev, newPlayer];
     });
-  }, [nextRoundIndex]);
+  }, [rounds.length]);
 
   const handleReset = useCallback(() => {
-    if (!window.confirm('すべてのデータ（参加者・履歴）を初期化しますか？')) return;
+    if (!window.confirm('すべてのデータ（対戦表・参加者設定）を初期化しますか？')) return;
     setPlayers(createInitialPlayers());
     setCourtCount(DEFAULT_COURT_COUNT);
     setLookaheadCount(DEFAULT_LOOKAHEAD_ROUNDS);
-    setConfirmedRounds([]);
-    setPendingRounds([]);
+    setRounds([]);
+    setIsSettingsOpen(false);
+    setPendingRecalcPrompt(null);
   }, []);
 
   return (
     <div className="min-h-screen bg-slate-900 flex justify-center">
-      {/* Mobile-sized container (fixed max width for clean mobile app feel on any device) */}
+      {/* Mobile-sized app container */}
       <div className="w-full max-w-[430px] min-h-screen bg-slate-50 flex flex-col shadow-2xl border-x border-slate-200">
-        
-        {/* App Bar */}
+        {/* Top Header */}
         <header className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-4 py-3.5 sticky top-0 z-20 shadow-md flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xl">🏸</span>
-            <h1 className="text-base font-bold tracking-tight">対戦組み合わせ</h1>
+            <span className="text-2xl">🏸</span>
+            <h1 className="text-base font-black tracking-tight">バドミントン対戦作成</h1>
           </div>
-          <button
-            type="button"
-            onClick={handleReset}
-            className="text-xs bg-emerald-800/80 hover:bg-emerald-900 active:bg-emerald-950 px-2.5 py-1.5 rounded-md font-medium text-emerald-100 transition-colors"
-          >
-            初期化
-          </button>
+          <div className="flex items-center gap-1.5">
+            {rounds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(true)}
+                className="text-xs bg-emerald-800/80 hover:bg-emerald-900 active:bg-emerald-950 px-2.5 py-1.5 rounded-lg font-bold text-emerald-100 flex items-center gap-1 transition-colors"
+              >
+                <span>⚙️</span> 設定
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleReset}
+              className="text-xs bg-emerald-800/50 hover:bg-emerald-900/80 active:bg-emerald-950 px-2 py-1.5 rounded-lg text-emerald-200 transition-colors"
+            >
+              初期化
+            </button>
+          </div>
         </header>
 
         {/* Main Content Area */}
         <main className="flex-1 p-3 space-y-4 pb-12 overflow-y-auto">
-          {/* Player Management Card */}
-          <section className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-3.5">
-            <PlayerManager
+          {rounds.length === 0 ? (
+            /* Screen 1: Required Initial Setup Screen */
+            <InitialSetup
+              courtCount={courtCount}
+              onCourtCountChange={setCourtCount}
               players={players}
               onPlayersChange={handlePlayersChange}
               onAddPlayer={handleAddPlayer}
-            />
-          </section>
-
-          {/* Court Setting & Generation Control Card */}
-          <section className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-3.5 space-y-3">
-            <CourtSetting
-              courtCount={courtCount}
-              onCourtCountChange={setCourtCount}
-              maxCourts={MAX_SELECTABLE_COURTS}
-            />
-            <hr className="border-slate-100" />
-            <GenerateControl
               lookaheadCount={lookaheadCount}
               onLookaheadCountChange={setLookaheadCount}
-              onGenerate={handleGenerate}
+              onStartSession={handleGenerateNext}
               canGenerate={canGenerate}
               disabledReason={disabledReason}
             />
-          </section>
+          ) : (
+            /* Screen 2: Active Matches Timeline */
+            <>
+              <section>
+                <MatchTimeline
+                  rounds={rounds}
+                  players={players}
+                  activePlayers={activePlayers}
+                  courtCount={courtCount}
+                  lookaheadCount={lookaheadCount}
+                  onLookaheadCountChange={setLookaheadCount}
+                  onGenerateNext={handleGenerateNext}
+                  canGenerate={canGenerate}
+                  disabledReason={disabledReason}
+                  onOpenSettings={() => setIsSettingsOpen(true)}
+                  onUpdateRound={handleUpdateRound}
+                  onRegenerateRound={handleRegenerateRound}
+                  onDeleteRound={handleDeleteRound}
+                />
+              </section>
 
-          {/* Pending (Lookahead) Rounds */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
-                <span>🎯</span> 生成された対戦（未確定）
-              </h2>
-              {pendingRounds.length > 0 && (
-                <span className="text-xs text-slate-500 font-medium">
-                  {pendingRounds.length} 試合
-                </span>
-              )}
-            </div>
-            <PendingRounds
-              rounds={pendingRounds}
-              players={players}
-              activePlayers={activePlayers}
-              onRoundChange={handleRoundChange}
-              onRegenerate={handleRegenerate}
-              onConfirm={handleConfirm}
-            />
-          </section>
-
-          {/* Statistics Card */}
-          <section className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-3.5">
-            <Statistics players={players} confirmedRounds={confirmedRounds} />
-          </section>
-
-          {/* Confirmed History Card */}
-          <section className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-3.5">
-            <ConfirmedRounds rounds={confirmedRounds} players={players} />
-          </section>
+              {/* Statistics Card */}
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-3.5">
+                <Statistics players={players} rounds={rounds} />
+              </section>
+            </>
+          )}
         </main>
 
         {/* Footer */}
@@ -243,6 +265,27 @@ export default function App() {
           🏸 Badminton MatchMaking
         </footer>
       </div>
+
+      {/* Mid-Game Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        courtCount={courtCount}
+        onCourtCountChange={setCourtCount}
+        players={players}
+        onPlayersChange={handlePlayersChange}
+        onAddPlayer={handleAddPlayer}
+        currentTotalRounds={rounds.length}
+      />
+
+      {/* Subsequent Rounds Recalculate Confirmation Modal */}
+      <RegenerateConfirmModal
+        isOpen={pendingRecalcPrompt !== null}
+        editedRoundNumber={(pendingRecalcPrompt?.roundIndex ?? 0) + 1}
+        subsequentRoundsCount={pendingRecalcPrompt?.subsequentCount ?? 0}
+        onConfirmRegenerate={handleConfirmRecalculateSubsequent}
+        onKeepExisting={handleDismissRecalculate}
+      />
     </div>
   );
 }

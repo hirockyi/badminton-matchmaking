@@ -13,20 +13,20 @@ export const CourtSetting: React.FC<CourtSettingProps> = ({
   maxCourts = MAX_SELECTABLE_COURTS,
 }) => {
   return (
-    <div className="flex items-center justify-between w-full py-1">
-      <label htmlFor="court-count-select" className="text-gray-800 text-sm font-bold flex items-center gap-1.5">
-        <span className="text-base">🏸</span> 使用コート数
+    <div className="flex items-center justify-between w-full">
+      <label htmlFor="court-count-select" className="text-slate-800 text-sm font-extrabold flex items-center gap-1.5">
+        <span className="text-lg">🏸</span> 使用コート数
       </label>
       <div className="flex items-center gap-2">
         <select
           id="court-count-select"
           value={courtCount}
           onChange={(e) => onCourtCountChange(Number(e.target.value))}
-          className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 font-semibold text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+          className="px-3 py-2 border border-slate-300 rounded-xl bg-white text-slate-900 font-extrabold text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
         >
           {Array.from({ length: maxCourts }, (_, i) => i + 1).map((num) => (
             <option key={num} value={num}>
-              {num} 面（{num * 4}人〜）
+              {num} 面（ダブルス {num * 4}人〜）
             </option>
           ))}
         </select>

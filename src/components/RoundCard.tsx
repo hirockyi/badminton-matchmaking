@@ -19,7 +19,7 @@ export const RoundCard: React.FC<RoundCardProps> = ({
   onRegenerate,
   onConfirm,
 }) => {
-  const isPending = round.status === 'pending';
+  const isPending = true;
 
   const handleMatchChange = (matchIndex: number, newMatch: Match) => {
     const newMatches = [...round.matches];

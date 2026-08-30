@@ -15,10 +15,9 @@ export type Match = {
 };
 
 export type Round = {
-  roundIndex: number;
+  roundIndex: number; // 0-indexed
   matches: Match[];
   benchPlayerIds: string[];
-  status: 'pending' | 'confirmed';
 };
 
 export type RoundCandidate = {

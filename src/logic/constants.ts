@@ -53,6 +53,16 @@ export const WEIGHT_CONSECUTIVE_REST = 8;
 /** Weight for deviation from stamina-adjusted target play rate. */
 export const WEIGHT_STAMINA_FIT = 15;
 
+// --- Recency Decay Rates ---
+// Closer rounds carry full weight (1.0). Older rounds decay exponentially.
+// e.g. rate = 0.8: 1 round ago = 1.0, 2 rounds ago = 0.8, 3 rounds ago = 0.64, 4 rounds ago = 0.51...
+
+/** Decay rate per elapsed round for pair duplication. */
+export const DECAY_RATE_PAIR_DUPLICATION = 0.80;
+
+/** Decay rate per elapsed round for opponent duplication. */
+export const DECAY_RATE_OPPONENT_DUPLICATION = 0.80;
+
 /**
  * Stamina relative weights (median stamina 3 = 1.0).
  * Used to calculate dynamic target play rates based on court capacity vs player count.
@@ -62,7 +72,7 @@ export const STAMINA_RELATIVE_WEIGHTS: Record<StaminaLevel, number> = {
   2: 0.75, // 75% relative to standard
   3: 1.00, // 100% (median / standard baseline)
   4: 1.25, // 125% relative to standard
-  5: 1.50, // 150% relative to standard (plays almost every game if capacity allows)
+  5: 1.50, // 150% relative to standard
 };
 
 /**

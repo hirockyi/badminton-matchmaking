@@ -48,17 +48,17 @@ function generateRandomCandidate(
 
 /**
  * Generate a single optimized round.
- * Creates CANDIDATE_COUNT random candidates, scores each, returns the best.
+ * Creates CANDIDATE_COUNT random candidates, scores each, and returns the best.
  */
 export function generateRound(
   activePlayers: Player[],
   courtCount: number,
-  confirmedRounds: Round[],
+  historyRounds: Round[],
   allPlayers: Player[],
   currentRoundIndex: number
 ): Round {
-  const lastRound = confirmedRounds.length > 0
-    ? confirmedRounds[confirmedRounds.length - 1]
+  const lastRound = historyRounds.length > 0
+    ? historyRounds[historyRounds.length - 1]
     : null;
 
   // Ensure we have enough players
@@ -67,7 +67,6 @@ export function generateRound(
       roundIndex: currentRoundIndex,
       matches: [],
       benchPlayerIds: activePlayers.map((p) => p.id),
-      status: 'pending',
     };
   }
 
@@ -84,7 +83,7 @@ export function generateRound(
     const candidate = generateRandomCandidate(activePlayers, effectiveCourtCount);
     const score = scoreCandidate(
       candidate,
-      confirmedRounds,
+      historyRounds,
       allPlayers,
       activePlayers,
       currentRoundIndex,
@@ -103,64 +102,84 @@ export function generateRound(
     roundIndex: currentRoundIndex,
     matches: bestCandidate?.matches ?? [],
     benchPlayerIds: bestCandidate?.benchPlayerIds ?? [],
-    status: 'pending',
   };
 }
 
 /**
- * Generate multiple rounds with lookahead.
- * Each round is generated considering the previous rounds (including earlier lookahead rounds as if confirmed).
+ * Generate multiple rounds consecutively.
+ * Each round considers previous history including freshly generated rounds.
  */
 export function generateMultipleRounds(
   activePlayers: Player[],
   courtCount: number,
-  confirmedRounds: Round[],
+  historyRounds: Round[],
   allPlayers: Player[],
   startRoundIndex: number,
   count: number
 ): Round[] {
   const rounds: Round[] = [];
-  const virtualHistory = [...confirmedRounds];
+  const cumulativeHistory = [...historyRounds];
 
   for (let i = 0; i < count; i++) {
     const roundIndex = startRoundIndex + i;
     const round = generateRound(
       activePlayers,
       courtCount,
-      virtualHistory,
+      cumulativeHistory,
       allPlayers,
       roundIndex
     );
     round.roundIndex = roundIndex;
     rounds.push(round);
-    // Add to virtual history so next lookahead round considers this one
-    virtualHistory.push({ ...round, status: 'confirmed' });
+    cumulativeHistory.push(round);
   }
 
   return rounds;
 }
 
 /**
- * Regenerate a single round at a specific index.
- * Takes into account all confirmed rounds and any pending rounds before this index.
+ * Regenerate a single round at a specific index, considering all rounds before it.
  */
-export function regenerateRound(
+export function regenerateSingleRound(
   activePlayers: Player[],
   courtCount: number,
-  confirmedRounds: Round[],
-  pendingRoundsBefore: Round[],
+  allRounds: Round[],
   allPlayers: Player[],
-  roundIndex: number
+  targetRoundIndex: number
 ): Round {
-  const virtualHistory = [
-    ...confirmedRounds,
-    ...pendingRoundsBefore.map((r) => ({ ...r, status: 'confirmed' as const })),
-  ];
+  const historyBefore = allRounds.filter((r) => r.roundIndex < targetRoundIndex);
   return generateRound(
     activePlayers,
     courtCount,
-    virtualHistory,
+    historyBefore,
     allPlayers,
-    roundIndex
+    targetRoundIndex
   );
+}
+
+/**
+ * Regenerate all rounds starting from a specific index onward, using the history before that index.
+ */
+export function regenerateSubsequentRounds(
+  activePlayers: Player[],
+  courtCount: number,
+  allRounds: Round[],
+  allPlayers: Player[],
+  fromRoundIndex: number
+): Round[] {
+  const historyBefore = allRounds.filter((r) => r.roundIndex < fromRoundIndex);
+  const countToRegenerate = allRounds.length - fromRoundIndex;
+
+  if (countToRegenerate <= 0) return allRounds;
+
+  const newSubsequentRounds = generateMultipleRounds(
+    activePlayers,
+    courtCount,
+    historyBefore,
+    allPlayers,
+    fromRoundIndex,
+    countToRegenerate
+  );
+
+  return [...historyBefore, ...newSubsequentRounds];
 }

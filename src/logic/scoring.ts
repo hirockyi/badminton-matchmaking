@@ -6,6 +6,8 @@ import {
   WEIGHT_CONSECUTIVE_REST,
   WEIGHT_STAMINA_FIT,
   PLAYERS_PER_COURT,
+  DECAY_RATE_PAIR_DUPLICATION,
+  DECAY_RATE_OPPONENT_DUPLICATION,
   STAMINA_RELATIVE_WEIGHTS,
   STAMINA_CONSECUTIVE_PLAY_MULTIPLIER,
   STAMINA_CONSECUTIVE_REST_MULTIPLIER,
@@ -56,8 +58,7 @@ function pairKey(a: string, b: string): string {
 }
 
 /**
- * Calculate capacity-aware dynamic target play rates for each active player,
- * considering the court capacity to player count ratio and stamina weighting.
+ * Calculate capacity-aware dynamic target play rates for each active player.
  */
 export function calcDynamicTargetPlayRates(
   activePlayers: Player[],
@@ -69,7 +70,6 @@ export function calcDynamicTargetPlayRates(
   const courtSlots = courtCount * PLAYERS_PER_COURT;
   const baseRate = Math.min(1.0, courtSlots / activePlayers.length);
 
-  // Calculate mean stamina relative weight among active players
   const totalWeight = activePlayers.reduce(
     (sum, p) => sum + (STAMINA_RELATIVE_WEIGHTS[p.stamina] ?? 1.0),
     0
@@ -78,7 +78,6 @@ export function calcDynamicTargetPlayRates(
 
   for (const player of activePlayers) {
     const playerWeight = STAMINA_RELATIVE_WEIGHTS[player.stamina] ?? 1.0;
-    // Scale the base rate by the ratio of this player's weight to the group average
     const targetRate = Math.min(1.0, Math.max(0.0, baseRate * (playerWeight / avgWeight)));
     targetMap.set(player.id, targetRate);
   }
@@ -87,57 +86,63 @@ export function calcDynamicTargetPlayRates(
 }
 
 /**
- * Pair duplication penalty.
- * Sum of historical pair frequencies for all pairs in the candidate.
+ * Pair duplication penalty with recency exponential decay.
+ * Recent pairings are weighted heavily; older pairings decay exponentially.
  */
 export function calcPairDuplicationPenalty(
   candidate: RoundCandidate,
-  confirmedRounds: Round[]
+  confirmedRounds: Round[],
+  currentRoundIndex: number
 ): number {
-  const pairCounts = new Map<string, number>();
+  const pairWeights = new Map<string, number>();
   for (const round of confirmedRounds) {
+    const elapsed = Math.max(1, currentRoundIndex - round.roundIndex);
+    const decay = Math.pow(DECAY_RATE_PAIR_DUPLICATION, elapsed - 1);
+
     for (const pair of getPairs(round.matches)) {
       const key = pairKey(pair[0], pair[1]);
-      pairCounts.set(key, (pairCounts.get(key) || 0) + 1);
+      pairWeights.set(key, (pairWeights.get(key) || 0) + decay);
     }
   }
 
   let penalty = 0;
   for (const pair of getPairs(candidate.matches)) {
     const key = pairKey(pair[0], pair[1]);
-    penalty += pairCounts.get(key) || 0;
+    penalty += pairWeights.get(key) || 0;
   }
   return penalty;
 }
 
 /**
- * Opponent duplication penalty.
- * Sum of historical opponent matchup frequencies for all matchups in the candidate.
+ * Opponent duplication penalty with recency exponential decay.
+ * Recent opponent matchups are weighted heavily; older matchups decay exponentially.
  */
 export function calcOpponentDuplicationPenalty(
   candidate: RoundCandidate,
-  confirmedRounds: Round[]
+  confirmedRounds: Round[],
+  currentRoundIndex: number
 ): number {
-  const oppCounts = new Map<string, number>();
+  const oppWeights = new Map<string, number>();
   for (const round of confirmedRounds) {
+    const elapsed = Math.max(1, currentRoundIndex - round.roundIndex);
+    const decay = Math.pow(DECAY_RATE_OPPONENT_DUPLICATION, elapsed - 1);
+
     for (const pair of getOpponentPairs(round.matches)) {
       const key = pairKey(pair[0], pair[1]);
-      oppCounts.set(key, (oppCounts.get(key) || 0) + 1);
+      oppWeights.set(key, (oppWeights.get(key) || 0) + decay);
     }
   }
 
   let penalty = 0;
   for (const pair of getOpponentPairs(candidate.matches)) {
     const key = pairKey(pair[0], pair[1]);
-    penalty += oppCounts.get(key) || 0;
+    penalty += oppWeights.get(key) || 0;
   }
   return penalty;
 }
 
 /**
  * Consecutive play penalty weighted by player stamina.
- * Stamina 1 gets massive penalty for playing consecutively.
- * Stamina 5 gets 0 penalty.
  */
 export function calcConsecutivePlayPenalty(
   candidate: RoundCandidate,
@@ -162,8 +167,6 @@ export function calcConsecutivePlayPenalty(
 
 /**
  * Consecutive rest penalty weighted by player stamina.
- * Stamina 5 gets heavy penalty for resting back-to-back.
- * Stamina 1 gets 0 penalty (resting is good).
  */
 export function calcConsecutiveRestPenalty(
   candidate: RoundCandidate,
@@ -187,8 +190,6 @@ export function calcConsecutiveRestPenalty(
 
 /**
  * Stamina fit penalty.
- * Measures deviation of each active player's cumulative play rate from their
- * capacity-aware dynamic target play rate, accounting for joinedAtRound.
  */
 export function calcStaminaFitPenalty(
   candidate: RoundCandidate,
@@ -219,7 +220,6 @@ export function calcStaminaFitPenalty(
     const actualRate = gamesPlayed / availableRounds;
     const targetRate = targetRates.get(player.id) ?? 0.8;
 
-    // Squared deviation from capacity-aware target
     totalPenalty += (actualRate - targetRate) ** 2;
   }
 
@@ -227,8 +227,7 @@ export function calcStaminaFitPenalty(
 }
 
 /**
- * Calculate total score for a candidate round.
- * Higher score = better candidate.
+ * Calculate total score for a candidate round with recency decay applied to duplicates.
  */
 export function scoreCandidate(
   candidate: RoundCandidate,
@@ -241,8 +240,8 @@ export function scoreCandidate(
 ): number {
   const playersById = new Map<string, Player>(allPlayers.map((p) => [p.id, p]));
 
-  const pairPenalty = calcPairDuplicationPenalty(candidate, confirmedRounds);
-  const opponentPenalty = calcOpponentDuplicationPenalty(candidate, confirmedRounds);
+  const pairPenalty = calcPairDuplicationPenalty(candidate, confirmedRounds, currentRoundIndex);
+  const opponentPenalty = calcOpponentDuplicationPenalty(candidate, confirmedRounds, currentRoundIndex);
   const consecutivePlayPenalty = calcConsecutivePlayPenalty(candidate, lastRound, playersById);
   const consecutiveRestPenalty = calcConsecutiveRestPenalty(candidate, lastRound, playersById);
   const staminaFitPenalty = calcStaminaFitPenalty(

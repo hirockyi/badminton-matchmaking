@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { generateRound, generateMultipleRounds, regenerateRound } from './matchGenerator';
+import {
+  generateRound,
+  generateMultipleRounds,
+  regenerateSingleRound,
+  regenerateSubsequentRounds,
+} from './matchGenerator';
 import { Player, Round, StaminaLevel } from './types';
-import { PLAYERS_PER_COURT } from './constants';
 
 function makePlayer(id: string, stamina: StaminaLevel = 3, overrides?: Partial<Player>): Player {
   return {
@@ -20,7 +24,6 @@ describe('generateRound', () => {
     const round = generateRound(players, 1, [], players, 0);
 
     expect(round.roundIndex).toBe(0);
-    expect(round.status).toBe('pending');
     expect(round.matches).toHaveLength(1);
     expect(round.benchPlayerIds).toHaveLength(0);
 
@@ -45,8 +48,6 @@ describe('generateRound', () => {
 
 describe('stamina effects in multi-round generation', () => {
   it('gives significantly more play time to stamina 5 than stamina 1', () => {
-    // 6 players with 1 court (4 play, 2 rest each round) for 10 rounds
-    // Player 'p_high' has stamina 5, 'p_low' has stamina 1, others have stamina 3
     const players: Player[] = [
       makePlayer('p_high', 5),
       makePlayer('p_low', 1),
@@ -70,14 +71,12 @@ describe('stamina effects in multi-round generation', () => {
       if (playing.has('p_low')) lowPlayed++;
     }
 
-    // Stamina 5 should play substantially more than stamina 1
     expect(highPlayed).toBeGreaterThan(lowPlayed);
-    expect(highPlayed).toBeGreaterThanOrEqual(7); // mostly playing
-    expect(lowPlayed).toBeLessThanOrEqual(5);     // well-rested
+    expect(highPlayed).toBeGreaterThanOrEqual(7);
+    expect(lowPlayed).toBeLessThanOrEqual(5);
   });
 
   it('prevents stamina 1 from playing consecutive rounds when bench is available', () => {
-    // 6 players, 1 court for 6 rounds
     const players: Player[] = [
       makePlayer('p_low', 1),
       makePlayer('p2', 3),
@@ -93,14 +92,37 @@ describe('stamina effects in multi-round generation', () => {
     let prevPlayed = false;
 
     for (const round of rounds) {
-      const isPlaying = round.matches[0].team1.includes('p_low') || round.matches[0].team2.includes('p_low');
+      const isPlaying =
+        round.matches[0].team1.includes('p_low') || round.matches[0].team2.includes('p_low');
       if (isPlaying && prevPlayed) {
         lowConsecutivePlays++;
       }
       prevPlayed = isPlaying;
     }
 
-    // Stamina 1 should have zero (or minimal) consecutive games
     expect(lowConsecutivePlays).toBe(0);
+  });
+});
+
+describe('regenerateSingleRound and regenerateSubsequentRounds', () => {
+  it('regenerates a single round properly', () => {
+    const players = Array.from({ length: 6 }, (_, i) => makePlayer(`p${i}`, 3));
+    const rounds = generateMultipleRounds(players, 1, [], players, 0, 3);
+
+    const reDrawn = regenerateSingleRound(players, 1, rounds, players, 1);
+    expect(reDrawn.roundIndex).toBe(1);
+    expect(reDrawn.matches).toHaveLength(1);
+  });
+
+  it('regenerates subsequent rounds maintaining prior history', () => {
+    const players = Array.from({ length: 6 }, (_, i) => makePlayer(`p${i}`, 3));
+    const rounds = generateMultipleRounds(players, 1, [], players, 0, 5);
+
+    // Modify round 1
+    const modifiedRounds = regenerateSubsequentRounds(players, 1, rounds, players, 2);
+    expect(modifiedRounds).toHaveLength(5);
+    // Rounds 0 and 1 are kept identical
+    expect(modifiedRounds[0]).toEqual(rounds[0]);
+    expect(modifiedRounds[1]).toEqual(rounds[1]);
   });
 });
