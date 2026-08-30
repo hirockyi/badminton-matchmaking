@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Player, Round } from '../logic/types';
+import { HeartRating } from './common/HeartRating';
 
 interface StatisticsProps {
   players: Player[];
@@ -134,11 +135,7 @@ export const Statistics: React.FC<StatisticsProps> = ({ players, rounds }) => {
                   </td>
                   <td className="px-2.5 py-2.5 text-center text-slate-500 font-semibold">{stat.benchCount}</td>
                   <td className="px-2.5 py-2.5 text-center">
-                    <span className="inline-flex gap-0.5 text-rose-500 text-xs">
-                      {Array.from({ length: stat.stamina }).map((_, i) => (
-                        <span key={i}>❤️</span>
-                      ))}
-                    </span>
+                    <HeartRating value={stat.stamina} size="sm" />
                   </td>
                 </tr>
               ))}
