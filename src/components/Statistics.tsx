@@ -18,13 +18,13 @@ export const Statistics: React.FC<StatisticsProps> = ({ players, rounds }) => {
           className="w-full flex justify-between items-center text-left focus:outline-none"
           onClick={() => setIsExpanded(!isExpanded)}
         >
-          <h2 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+          <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-1.5">
             <span>📊</span> 試合・出場統計
           </h2>
           <span className="text-xs text-slate-400 font-medium">{isExpanded ? '▲ 閉じる' : '▼ 開く'}</span>
         </button>
         {isExpanded && (
-          <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded-xl mt-2 border border-slate-100">
+          <p className="text-sm text-slate-400 text-center py-4 bg-slate-50 rounded-xl mt-2 border border-slate-100 font-medium">
             対戦表を生成するとここに統計が表示されます
           </p>
         )}
@@ -81,14 +81,14 @@ export const Statistics: React.FC<StatisticsProps> = ({ players, rounds }) => {
     <div>
       <button
         type="button"
-        className="w-full flex justify-between items-center text-left focus:outline-none mb-2.5"
+        className="w-full flex justify-between items-center text-left focus:outline-none mb-3"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-1.5">
+          <h2 className="text-base sm:text-lg font-extrabold text-slate-800 flex items-center gap-1.5">
             <span>📊</span> 試合・出場統計
           </h2>
-          <span className="text-xs bg-slate-200 text-slate-800 px-2 py-0.5 rounded-full font-bold">
+          <span className="text-xs bg-slate-200 text-slate-800 px-2.5 py-0.5 rounded-full font-bold">
             計 {rounds.length} 試合
           </span>
         </div>
@@ -97,18 +97,18 @@ export const Statistics: React.FC<StatisticsProps> = ({ players, rounds }) => {
 
       {isExpanded && (
         <div className="overflow-x-auto -mx-1">
-          <table className="w-full text-sm text-left whitespace-nowrap">
-            <thead className="text-xs text-slate-600 uppercase bg-slate-100 rounded-lg">
+          <table className="w-full text-base text-left whitespace-nowrap">
+            <thead className="text-xs sm:text-sm text-slate-600 uppercase bg-slate-100 rounded-lg">
               <tr>
-                <th className="px-3 py-2 rounded-l-lg font-extrabold">名前</th>
-                <th className="px-2.5 py-2 text-center font-extrabold">出場</th>
-                <th className="px-2.5 py-2 text-center font-extrabold">可能</th>
-                <th className="px-2.5 py-2 text-center font-extrabold">出場率</th>
-                <th className="px-2.5 py-2 text-center font-extrabold">休憩</th>
-                <th className="px-2.5 py-2 rounded-r-lg text-center font-extrabold">体力</th>
+                <th className="px-3 py-2.5 rounded-l-lg font-extrabold">名前</th>
+                <th className="px-2.5 py-2.5 text-center font-extrabold">出場</th>
+                <th className="px-2.5 py-2.5 text-center font-extrabold">可能</th>
+                <th className="px-2.5 py-2.5 text-center font-extrabold">出場率</th>
+                <th className="px-2.5 py-2.5 text-center font-extrabold">休憩</th>
+                <th className="px-2.5 py-2.5 rounded-r-lg text-center font-extrabold">体力</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
+            <tbody className="divide-y divide-slate-100 font-semibold">
               {stats.map((stat) => (
                 <tr
                   key={stat.id}
@@ -116,25 +116,25 @@ export const Statistics: React.FC<StatisticsProps> = ({ players, rounds }) => {
                     !stat.active ? 'text-slate-400 bg-slate-50/50 line-through' : 'text-slate-900'
                   }`}
                 >
-                  <td className="px-3 py-2.5 font-bold flex items-center gap-1">
+                  <td className="px-3 py-3 font-extrabold flex items-center gap-1">
                     {stat.name}
-                    {!stat.active && <span className="text-[10px] no-underline font-normal text-slate-400">(休)</span>}
+                    {!stat.active && <span className="text-xs no-underline font-normal text-slate-400">(休)</span>}
                   </td>
-                  <td className="px-2.5 py-2.5 text-center font-extrabold text-emerald-700 text-base">
+                  <td className="px-2.5 py-3 text-center font-extrabold text-emerald-700 text-lg">
                     {stat.gamesPlayed}
                   </td>
-                  <td className="px-2.5 py-2.5 text-center text-slate-500">{stat.gamesAvailable}</td>
-                  <td className="px-2.5 py-2.5 text-center font-bold">
+                  <td className="px-2.5 py-3 text-center text-slate-500">{stat.gamesAvailable}</td>
+                  <td className="px-2.5 py-3 text-center font-extrabold">
                     {stat.playRate !== null ? (
-                      <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md text-xs font-extrabold">
+                      <span className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded-md text-xs sm:text-sm font-extrabold">
                         {stat.playRate}%
                       </span>
                     ) : (
                       '-'
                     )}
                   </td>
-                  <td className="px-2.5 py-2.5 text-center text-slate-500 font-semibold">{stat.benchCount}</td>
-                  <td className="px-2.5 py-2.5 text-center">
+                  <td className="px-2.5 py-3 text-center text-slate-500">{stat.benchCount}</td>
+                  <td className="px-2.5 py-3 text-center">
                     <HeartRating value={stat.stamina} size="sm" />
                   </td>
                 </tr>
