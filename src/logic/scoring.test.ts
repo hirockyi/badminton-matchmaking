@@ -5,6 +5,7 @@ import {
   calcConsecutivePlayPenalty,
   calcConsecutiveRestPenalty,
   calcDynamicTargetPlayRates,
+  calcDynamicDecayRates,
   calcStaminaFitPenalty,
   scoreCandidate,
 } from './scoring';
@@ -32,6 +33,22 @@ function makeRound(index: number, matches: Round['matches'], bench: string[] = [
 function makeCandidate(matches: RoundCandidate['matches'], bench: string[] = []): RoundCandidate {
   return { matches, benchPlayerIds: bench, score: 0 };
 }
+
+describe('calcDynamicDecayRates', () => {
+  it('calculates higher decay retention for larger player-to-court ratios (longer cycle)', () => {
+    // 1 court, 8 players -> cycle is 14 rounds -> slow decay (high retention rate close to 1)
+    const { pairDecayRate: decay1C8P } = calcDynamicDecayRates(8, 1);
+    // 2 courts, 8 players -> cycle is 7 rounds -> faster decay
+    const { pairDecayRate: decay2C8P } = calcDynamicDecayRates(8, 2);
+    // 1 court, 5 players -> cycle is 5 rounds -> even faster decay
+    const { pairDecayRate: decay1C5P } = calcDynamicDecayRates(5, 1);
+
+    expect(decay1C8P).toBeGreaterThan(decay2C8P);
+    expect(decay2C8P).toBeGreaterThan(decay1C5P);
+    // For 8 players 1 court, cycle is 14 -> 0.5^(1/14) ≈ 0.95
+    expect(decay1C8P).toBeCloseTo(0.95, 1);
+  });
+});
 
 describe('calcDynamicTargetPlayRates', () => {
   it('calculates equal rates when all players have stamina 3', () => {
@@ -69,11 +86,9 @@ describe('calcPairDuplicationPenalty with recency decay', () => {
   });
 
   it('weights recent pairings heavier than older pairings due to decay', () => {
-    // Round 0: a and b paired (5 rounds ago)
     const oldHistory = [
       makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
     ];
-    // Round 4: a and b paired (1 round ago)
     const recentHistory = [
       makeRound(4, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }]),
     ];
@@ -82,10 +97,9 @@ describe('calcPairDuplicationPenalty with recency decay', () => {
       { courtIndex: 0, team1: ['a', 'b'], team2: ['e', 'f'] },
     ]);
 
-    const oldPenalty = calcPairDuplicationPenalty(candidate, oldHistory, 5);
-    const recentPenalty = calcPairDuplicationPenalty(candidate, recentHistory, 5);
+    const oldPenalty = calcPairDuplicationPenalty(candidate, oldHistory, 5, 0.8);
+    const recentPenalty = calcPairDuplicationPenalty(candidate, recentHistory, 5, 0.8);
 
-    // Recent pairing should carry substantially higher penalty than old pairing
     expect(recentPenalty).toBeGreaterThan(oldPenalty);
     expect(recentPenalty).toBeCloseTo(1.0, 2);
     expect(oldPenalty).toBeCloseTo(Math.pow(0.8, 4), 2);
@@ -105,8 +119,8 @@ describe('calcOpponentDuplicationPenalty with recency decay', () => {
       { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
     ]);
 
-    const oldPenalty = calcOpponentDuplicationPenalty(candidate, oldHistory, 5);
-    const recentPenalty = calcOpponentDuplicationPenalty(candidate, recentHistory, 5);
+    const oldPenalty = calcOpponentDuplicationPenalty(candidate, oldHistory, 5, 0.8);
+    const recentPenalty = calcOpponentDuplicationPenalty(candidate, recentHistory, 5, 0.8);
 
     expect(recentPenalty).toBeGreaterThan(oldPenalty);
   });
@@ -167,7 +181,7 @@ describe('calcConsecutiveRestPenalty', () => {
 });
 
 describe('scoreCandidate', () => {
-  it('returns valid score with decay applied', () => {
+  it('returns valid score with dynamic decay applied', () => {
     const players = [
       makePlayer('a', 5),
       makePlayer('b', 3),

@@ -1,6 +1,7 @@
 import { Player, Match, Round, RoundCandidate } from './types';
 import { CANDIDATE_COUNT, PLAYERS_PER_COURT } from './constants';
 import { scoreCandidate } from './scoring';
+import { reassignCourtIndices } from './courtReassignment';
 
 /**
  * Fisher-Yates shuffle (in-place).
@@ -49,6 +50,8 @@ function generateRandomCandidate(
 /**
  * Generate a single optimized round.
  * Creates CANDIDATE_COUNT random candidates, scores each, and returns the best.
+ * After selecting the best player pairings/matchups, reassigns court numbers
+ * to minimize players staying on the same court as previous rounds.
  */
 export function generateRound(
   activePlayers: Player[],
@@ -70,7 +73,7 @@ export function generateRound(
     };
   }
 
-  // Adjust court count if not enough active players
+  // Adjust court count if not enough active players (handles mid-session player leave)
   const effectiveCourtCount = Math.min(
     courtCount,
     Math.floor(activePlayers.length / PLAYERS_PER_COURT)
@@ -98,9 +101,18 @@ export function generateRound(
     }
   }
 
+  const rawMatches = bestCandidate?.matches ?? [];
+
+  // Reassign court indices so players don't stay on the exact same court repeatedly
+  const optimizedMatches = reassignCourtIndices(
+    rawMatches,
+    historyRounds,
+    lastRound
+  );
+
   return {
     roundIndex: currentRoundIndex,
-    matches: bestCandidate?.matches ?? [],
+    matches: optimizedMatches,
     benchPlayerIds: bestCandidate?.benchPlayerIds ?? [],
   };
 }

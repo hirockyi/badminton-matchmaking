@@ -6,8 +6,6 @@ import {
   WEIGHT_CONSECUTIVE_REST,
   WEIGHT_STAMINA_FIT,
   PLAYERS_PER_COURT,
-  DECAY_RATE_PAIR_DUPLICATION,
-  DECAY_RATE_OPPONENT_DUPLICATION,
   STAMINA_RELATIVE_WEIGHTS,
   STAMINA_CONSECUTIVE_PLAY_MULTIPLIER,
   STAMINA_CONSECUTIVE_REST_MULTIPLIER,
@@ -58,6 +56,32 @@ function pairKey(a: string, b: string): string {
 }
 
 /**
+ * Calculate dynamic recency decay rates for pair and opponent duplication
+ * based on the active player count and court count (theoretical cycle length).
+ * 
+ * T_cycle,pair = max(3, N * (N - 1) / (4 * C))
+ * T_cycle,opp  = max(2, N * (N - 1) / (8 * C))
+ * decayRate    = 0.5 ^ (1 / T_cycle)
+ */
+export function calcDynamicDecayRates(
+  activePlayerCount: number,
+  courtCount: number
+): { pairDecayRate: number; oppDecayRate: number } {
+  const n = Math.max(PLAYERS_PER_COURT, activePlayerCount);
+  const c = Math.max(1, courtCount);
+
+  // Theoretical minimal rounds for everyone to pair with everyone at least once
+  const pairCycleRounds = Math.max(3, (n * (n - 1)) / (4 * c));
+  // Theoretical minimal rounds for everyone to oppose everyone at least once
+  const oppCycleRounds = Math.max(2, (n * (n - 1)) / (8 * c));
+
+  const pairDecayRate = Math.pow(0.5, 1 / pairCycleRounds);
+  const oppDecayRate = Math.pow(0.5, 1 / oppCycleRounds);
+
+  return { pairDecayRate, oppDecayRate };
+}
+
+/**
  * Calculate capacity-aware dynamic target play rates for each active player.
  */
 export function calcDynamicTargetPlayRates(
@@ -92,12 +116,13 @@ export function calcDynamicTargetPlayRates(
 export function calcPairDuplicationPenalty(
   candidate: RoundCandidate,
   confirmedRounds: Round[],
-  currentRoundIndex: number
+  currentRoundIndex: number,
+  decayRate: number = 0.85
 ): number {
   const pairWeights = new Map<string, number>();
   for (const round of confirmedRounds) {
     const elapsed = Math.max(1, currentRoundIndex - round.roundIndex);
-    const decay = Math.pow(DECAY_RATE_PAIR_DUPLICATION, elapsed - 1);
+    const decay = Math.pow(decayRate, elapsed - 1);
 
     for (const pair of getPairs(round.matches)) {
       const key = pairKey(pair[0], pair[1]);
@@ -120,12 +145,13 @@ export function calcPairDuplicationPenalty(
 export function calcOpponentDuplicationPenalty(
   candidate: RoundCandidate,
   confirmedRounds: Round[],
-  currentRoundIndex: number
+  currentRoundIndex: number,
+  decayRate: number = 0.80
 ): number {
   const oppWeights = new Map<string, number>();
   for (const round of confirmedRounds) {
     const elapsed = Math.max(1, currentRoundIndex - round.roundIndex);
-    const decay = Math.pow(DECAY_RATE_OPPONENT_DUPLICATION, elapsed - 1);
+    const decay = Math.pow(decayRate, elapsed - 1);
 
     for (const pair of getOpponentPairs(round.matches)) {
       const key = pairKey(pair[0], pair[1]);
@@ -227,7 +253,7 @@ export function calcStaminaFitPenalty(
 }
 
 /**
- * Calculate total score for a candidate round with recency decay applied to duplicates.
+ * Calculate total score for a candidate round with dynamic recency decay applied.
  */
 export function scoreCandidate(
   candidate: RoundCandidate,
@@ -240,8 +266,24 @@ export function scoreCandidate(
 ): number {
   const playersById = new Map<string, Player>(allPlayers.map((p) => [p.id, p]));
 
-  const pairPenalty = calcPairDuplicationPenalty(candidate, confirmedRounds, currentRoundIndex);
-  const opponentPenalty = calcOpponentDuplicationPenalty(candidate, confirmedRounds, currentRoundIndex);
+  // Dynamically calculate decay rates based on current active players & court count
+  const { pairDecayRate, oppDecayRate } = calcDynamicDecayRates(
+    activePlayers.length,
+    courtCount
+  );
+
+  const pairPenalty = calcPairDuplicationPenalty(
+    candidate,
+    confirmedRounds,
+    currentRoundIndex,
+    pairDecayRate
+  );
+  const opponentPenalty = calcOpponentDuplicationPenalty(
+    candidate,
+    confirmedRounds,
+    currentRoundIndex,
+    oppDecayRate
+  );
   const consecutivePlayPenalty = calcConsecutivePlayPenalty(candidate, lastRound, playersById);
   const consecutiveRestPenalty = calcConsecutiveRestPenalty(candidate, lastRound, playersById);
   const staminaFitPenalty = calcStaminaFitPenalty(

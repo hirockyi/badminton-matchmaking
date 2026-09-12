@@ -104,6 +104,72 @@ describe('stamina effects in multi-round generation', () => {
   });
 });
 
+describe('court reassignment in multi-court generation', () => {
+  it('ensures every player experiences multiple courts across rounds', () => {
+    // 8 players, 2 courts, 6 rounds
+    const players = Array.from({ length: 8 }, (_, i) => makePlayer(`p${i}`, 3));
+    const rounds = generateMultipleRounds(players, 2, [], players, 0, 6);
+
+    const court0Count = new Map<string, number>();
+    const court1Count = new Map<string, number>();
+
+    for (const round of rounds) {
+      for (const m of round.matches) {
+        const targetMap = m.courtIndex === 0 ? court0Count : court1Count;
+        for (const p of [...m.team1, ...m.team2]) {
+          targetMap.set(p, (targetMap.get(p) || 0) + 1);
+        }
+      }
+    }
+
+    let totalDiff = 0;
+    for (const p of players) {
+      const c0 = court0Count.get(p.id) || 0;
+      const c1 = court1Count.get(p.id) || 0;
+      // No player should be stuck exclusively on one court (e.g. 6:0)
+      expect(c0).toBeGreaterThan(0);
+      expect(c1).toBeGreaterThan(0);
+      totalDiff += Math.abs(c0 - c1);
+    }
+
+    // Average difference should be small (around 2 or less)
+    const avgDiff = totalDiff / players.length;
+    expect(avgDiff).toBeLessThanOrEqual(2.5);
+  });
+
+  it('rotates courts for players across 3 courts and reduces consecutive same court placements', () => {
+    // 12 players, 3 courts, 6 rounds
+    const players = Array.from({ length: 12 }, (_, i) => makePlayer(`p${i}`, 3));
+    const rounds = generateMultipleRounds(players, 3, [], players, 0, 6);
+
+    let consecutiveSameCourt = 0;
+    for (let r = 1; r < rounds.length; r++) {
+      const prevRound = rounds[r - 1];
+      const curRound = rounds[r];
+
+      const prevCourt = new Map<string, number>();
+      for (const m of prevRound.matches) {
+        for (const p of [...m.team1, ...m.team2]) {
+          prevCourt.set(p, m.courtIndex);
+        }
+      }
+
+      for (const m of curRound.matches) {
+        for (const p of [...m.team1, ...m.team2]) {
+          if (prevCourt.get(p) === m.courtIndex) {
+            consecutiveSameCourt++;
+          }
+        }
+      }
+    }
+
+    // With 3 courts and 5 transitions (12 players * 5 = 60 player-rounds),
+    // purely random allocation would result in ~20 instances on the same court.
+    // Optimized court reassignment brings it significantly lower (<= 15).
+    expect(consecutiveSameCourt).toBeLessThanOrEqual(15);
+  });
+});
+
 describe('regenerateSingleRound and regenerateSubsequentRounds', () => {
   it('regenerates a single round properly', () => {
     const players = Array.from({ length: 6 }, (_, i) => makePlayer(`p${i}`, 3));
@@ -118,10 +184,8 @@ describe('regenerateSingleRound and regenerateSubsequentRounds', () => {
     const players = Array.from({ length: 6 }, (_, i) => makePlayer(`p${i}`, 3));
     const rounds = generateMultipleRounds(players, 1, [], players, 0, 5);
 
-    // Modify round 1
     const modifiedRounds = regenerateSubsequentRounds(players, 1, rounds, players, 2);
     expect(modifiedRounds).toHaveLength(5);
-    // Rounds 0 and 1 are kept identical
     expect(modifiedRounds[0]).toEqual(rounds[0]);
     expect(modifiedRounds[1]).toEqual(rounds[1]);
   });
