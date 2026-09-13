@@ -2,6 +2,7 @@ import { useMatchSession } from './hooks/useMatchSession';
 import { InitialSetup } from './components/InitialSetup';
 import { MatchTimeline } from './components/MatchTimeline';
 import { SettingsModal } from './components/SettingsModal';
+import { RegenerateModal } from './components/RegenerateModal';
 import { RegenerateConfirmModal } from './components/RegenerateConfirmModal';
 import { Statistics } from './components/Statistics';
 
@@ -20,10 +21,12 @@ export default function App() {
     isSettingsOpen,
     setIsSettingsOpen,
     pendingRecalcPrompt,
+    regeneratingRoundIndex,
+    setRegeneratingRoundIndex,
 
     handleInitialCourtCountChange,
     handleGenerateNext,
-    handleRegenerateFromRound,
+    handleConfirmRegenerateWithSettings,
     handleUpdateRound,
     handleConfirmRecalculateSubsequent,
     handleDismissRecalculate,
@@ -93,7 +96,7 @@ export default function App() {
                   disabledReason={disabledReason}
                   onOpenSettings={() => setIsSettingsOpen(true)}
                   onUpdateRound={handleUpdateRound}
-                  onRegenerateFromRound={handleRegenerateFromRound}
+                  onOpenRegenerateModal={(roundIndex) => setRegeneratingRoundIndex(roundIndex)}
                 />
               </section>
 
@@ -123,7 +126,22 @@ export default function App() {
         currentTotalRounds={rounds.length}
       />
 
-      {/* Subsequent Rounds Recalculate Confirmation Modal */}
+      {/* Regenerate From Round Modal (with court & player changes) */}
+      <RegenerateModal
+        isOpen={regeneratingRoundIndex !== null}
+        onClose={() => setRegeneratingRoundIndex(null)}
+        fromRoundIndex={regeneratingRoundIndex ?? 0}
+        totalRounds={rounds.length}
+        courtCount={courtCount}
+        players={players}
+        onConfirmRegenerate={(newCourtCount, newPlayers) => {
+          if (regeneratingRoundIndex !== null) {
+            handleConfirmRegenerateWithSettings(regeneratingRoundIndex, newCourtCount, newPlayers);
+          }
+        }}
+      />
+
+      {/* Subsequent Rounds Recalculate Confirmation Modal (after manual edit) */}
       <RegenerateConfirmModal
         isOpen={pendingRecalcPrompt !== null}
         editedRoundNumber={(pendingRecalcPrompt?.roundIndex ?? 0) + 1}

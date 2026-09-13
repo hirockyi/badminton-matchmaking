@@ -33,7 +33,10 @@ export function useMatchSession() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // Subsequent rounds recalc prompt state
+  // Target round index for regeneration modal
+  const [regeneratingRoundIndex, setRegeneratingRoundIndex] = useState<number | null>(null);
+
+  // Subsequent rounds recalc prompt state after manual edit
   const [pendingRecalcPrompt, setPendingRecalcPrompt] = useState<{
     roundIndex: number;
     subsequentCount: number;
@@ -95,21 +98,27 @@ export function useMatchSession() {
   }, [activePlayers, courtCount, rounds, players, lookaheadCount, canGenerate]);
 
   /**
-   * Regenerate all rounds starting from a specific index onward
+   * Regenerate all rounds starting from a specific index onward with updated settings
    */
-  const handleRegenerateFromRound = useCallback(
-    (fromRoundIndex: number) => {
+  const handleConfirmRegenerateWithSettings = useCallback(
+    (fromRoundIndex: number, newCourtCount: number, newPlayers: Player[]) => {
+      setCourtCount(newCourtCount);
+      setPlayers(newPlayers);
+
+      const active = newPlayers.filter((p) => p.active);
+
       setRounds((prev) => {
         return regenerateSubsequentRounds(
-          activePlayers,
-          courtCount,
+          active,
+          newCourtCount,
           prev,
-          players,
+          newPlayers,
           fromRoundIndex
         );
       });
+      setRegeneratingRoundIndex(null);
     },
-    [activePlayers, courtCount, players]
+    []
   );
 
   /**
@@ -204,6 +213,7 @@ export function useMatchSession() {
     setRounds([]);
     setIsSettingsOpen(false);
     setPendingRecalcPrompt(null);
+    setRegeneratingRoundIndex(null);
   }, []);
 
   return {
@@ -221,11 +231,13 @@ export function useMatchSession() {
     isSettingsOpen,
     setIsSettingsOpen,
     pendingRecalcPrompt,
+    regeneratingRoundIndex,
+    setRegeneratingRoundIndex,
 
     // Actions
     handleInitialCourtCountChange,
     handleGenerateNext,
-    handleRegenerateFromRound,
+    handleConfirmRegenerateWithSettings,
     handleUpdateRound,
     handleConfirmRecalculateSubsequent,
     handleDismissRecalculate,

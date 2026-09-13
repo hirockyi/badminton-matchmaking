@@ -13,7 +13,7 @@ interface MatchTimelineProps {
   disabledReason?: string;
   onOpenSettings: () => void;
   onUpdateRound: (roundIndex: number, updatedRound: Round, hasSubsequent: boolean) => void;
-  onRegenerateFromRound: (roundIndex: number) => void;
+  onOpenRegenerateModal: (roundIndex: number) => void;
 }
 
 export const MatchTimeline: React.FC<MatchTimelineProps> = ({
@@ -28,7 +28,7 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
   disabledReason,
   onOpenSettings,
   onUpdateRound,
-  onRegenerateFromRound,
+  onOpenRegenerateModal,
 }) => {
   const [editingRoundIndex, setEditingRoundIndex] = useState<number | null>(null);
   const [editDraftRound, setEditDraftRound] = useState<Round | null>(null);
@@ -92,18 +92,6 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
     setEditDraftRound(null);
   };
 
-  const handleRegenerateClick = (roundIndex: number) => {
-    const isLast = roundIndex === rounds.length - 1;
-    const count = rounds.length - roundIndex;
-    const message = isLast
-      ? `第 ${roundIndex + 1} 試合を再抽選しますか？`
-      : `第 ${roundIndex + 1} 試合以降（計 ${count} 試合）を再抽選しますか？\n（直前までの結果をもとに再計算されます）`;
-
-    if (window.confirm(message)) {
-      onRegenerateFromRound(roundIndex);
-    }
-  };
-
   return (
     <div className="space-y-2">
       {/* Header Bar */}
@@ -146,7 +134,7 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
                   </span>
                 </div>
 
-                {/* Actions: Edit / Regenerate from this round */}
+                {/* Actions: Edit / Open Regenerate Modal */}
                 <div className="flex items-center gap-1.5">
                   {!isEditing && (
                     <>
@@ -159,8 +147,8 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleRegenerateClick(round.roundIndex)}
-                        title={isLastRound ? 'この試合を再抽選' : 'この試合以降を再抽選'}
+                        onClick={() => onOpenRegenerateModal(round.roundIndex)}
+                        title={isLastRound ? 'コート・メンバーを変更して再抽選' : 'コート・メンバーを変更して以降を再抽選'}
                         className="text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200/60 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1 shadow-2xs"
                       >
                         <span>🔄</span>
