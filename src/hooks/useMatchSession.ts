@@ -1,64 +1,56 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Player, Round } from '../logic/types';
 import {
+  DEFAULT_STAMINA,
+  DEFAULT_LOOKAHEAD_ROUNDS,
   DEFAULT_COURT_COUNT,
   DEFAULT_PLAYER_COUNT,
-  DEFAULT_LOOKAHEAD_ROUNDS,
-  DEFAULT_STAMINA,
   PLAYERS_PER_COURT,
 } from '../logic/constants';
 import {
   generateMultipleRounds,
-  regenerateSingleRound,
   regenerateSubsequentRounds,
 } from '../logic/matchGenerator';
 
-function createInitialPlayers(count: number = DEFAULT_PLAYER_COUNT): Player[] {
-  return Array.from({ length: count }, (_, i) => {
-    const num = i + 1;
-    return {
-      id: `player-${num}`,
-      name: String(num),
-      active: true,
-      joinedAtRound: 0,
-      stamina: DEFAULT_STAMINA,
-    };
-  });
+// Helper to create initial default player list (1 to N)
+function createInitialPlayers(count: number): Player[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `player-${i + 1}`,
+    name: String(i + 1),
+    active: true,
+    joinedAtRound: 0,
+    stamina: DEFAULT_STAMINA,
+  }));
 }
 
 export function useMatchSession() {
-  const [players, setPlayers] = useState<Player[]>(() => createInitialPlayers(DEFAULT_PLAYER_COUNT));
-  const [courtCount, setCourtCount] = useState(DEFAULT_COURT_COUNT);
-  const [lookaheadCount, setLookaheadCount] = useState(DEFAULT_LOOKAHEAD_ROUNDS);
+  const [players, setPlayers] = useState<Player[]>(() =>
+    createInitialPlayers(DEFAULT_PLAYER_COUNT)
+  );
+  const [courtCount, setCourtCount] = useState<number>(DEFAULT_COURT_COUNT);
+  const [lookaheadCount, setLookaheadCount] = useState<number>(DEFAULT_LOOKAHEAD_ROUNDS);
   const [rounds, setRounds] = useState<Round[]>([]);
 
-  // Modals state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Subsequent rounds recalc prompt state
   const [pendingRecalcPrompt, setPendingRecalcPrompt] = useState<{
     roundIndex: number;
     subsequentCount: number;
+    updatedRound: Round;
   } | null>(null);
 
-  const activePlayers = useMemo(
-    () => players.filter((p) => p.active),
-    [players]
-  );
+  // Active players
+  const activePlayers = useMemo(() => players.filter((p) => p.active), [players]);
 
-  const requiredPlayers = courtCount * PLAYERS_PER_COURT;
-  const canGenerate = activePlayers.length >= requiredPlayers;
-
-  const disabledReason = useMemo(() => {
-    if (activePlayers.length < PLAYERS_PER_COURT) {
-      return `最低 ${PLAYERS_PER_COURT} 人の参加者が必要です（現在 ${activePlayers.length} 人）`;
-    }
-    if (activePlayers.length < requiredPlayers) {
-      return `${courtCount} 面（${requiredPlayers} 人必要）に対して現在 ${activePlayers.length} 人です`;
-    }
-    return undefined;
-  }, [activePlayers.length, courtCount, requiredPlayers]);
+  // Validation
+  const canGenerate = activePlayers.length >= PLAYERS_PER_COURT;
+  const disabledReason = !canGenerate
+    ? `最低 ${PLAYERS_PER_COURT} 人の参加者が必要です（現在 ${activePlayers.length} 人）`
+    : undefined;
 
   /**
-   * Automatically scale player count to 4x court count on initial setup screen
+   * Handle initial setup court count change (auto-scales players to 4x courts)
    */
   const handleInitialCourtCountChange = useCallback((newCourtCount: number) => {
     setCourtCount(newCourtCount);
@@ -66,15 +58,17 @@ export function useMatchSession() {
 
     setPlayers((prev) => {
       if (prev.length === targetPlayerCount) return prev;
+
       if (prev.length > targetPlayerCount) {
         return prev.slice(0, targetPlayerCount);
       }
+
+      // Fill up to targetPlayerCount
       const updated = [...prev];
-      for (let i = prev.length; i < targetPlayerCount; i++) {
-        const num = i + 1;
+      for (let i = prev.length + 1; i <= targetPlayerCount; i++) {
         updated.push({
-          id: `player-${num}`,
-          name: String(num),
+          id: `player-${i}`,
+          name: String(i),
           active: true,
           joinedAtRound: 0,
           stamina: DEFAULT_STAMINA,
@@ -101,38 +95,22 @@ export function useMatchSession() {
   }, [activePlayers, courtCount, rounds, players, lookaheadCount, canGenerate]);
 
   /**
-   * Re-draw a single round in place
+   * Regenerate all rounds starting from a specific index onward
    */
-  const handleRegenerateRound = useCallback(
-    (roundIndex: number) => {
+  const handleRegenerateFromRound = useCallback(
+    (fromRoundIndex: number) => {
       setRounds((prev) => {
-        const newRound = regenerateSingleRound(
+        return regenerateSubsequentRounds(
           activePlayers,
           courtCount,
           prev,
           players,
-          roundIndex
+          fromRoundIndex
         );
-        const updated = [...prev];
-        updated[roundIndex] = newRound;
-        return updated;
       });
     },
     [activePlayers, courtCount, players]
   );
-
-  /**
-   * Delete a single round
-   */
-  const handleDeleteRound = useCallback((roundIndex: number) => {
-    setRounds((prev) => {
-      const filtered = prev.filter((_, i) => i !== roundIndex);
-      return filtered.map((round, newIdx) => ({
-        ...round,
-        roundIndex: newIdx,
-      }));
-    });
-  }, []);
 
   /**
    * Update a round after manual edit
@@ -140,15 +118,16 @@ export function useMatchSession() {
   const handleUpdateRound = useCallback(
     (roundIndex: number, updatedRound: Round, hasSubsequent: boolean) => {
       setRounds((prev) => {
-        const updated = [...prev];
-        updated[roundIndex] = updatedRound;
-        return updated;
+        const nextRounds = [...prev];
+        nextRounds[roundIndex] = updatedRound;
+        return nextRounds;
       });
 
       if (hasSubsequent) {
         setPendingRecalcPrompt({
           roundIndex,
-          subsequentCount: rounds.length - (roundIndex + 1),
+          subsequentCount: rounds.length - 1 - roundIndex,
+          updatedRound,
         });
       }
     },
@@ -156,31 +135,40 @@ export function useMatchSession() {
   );
 
   /**
-   * Recalculate subsequent rounds after manual edit confirmation
+   * Confirm subsequent rounds recalculation after manual edit
    */
   const handleConfirmRecalculateSubsequent = useCallback(() => {
     if (!pendingRecalcPrompt) return;
-    const fromIndex = pendingRecalcPrompt.roundIndex + 1;
+    const { roundIndex } = pendingRecalcPrompt;
+    setPendingRecalcPrompt(null);
 
     setRounds((prev) => {
-      return regenerateSubsequentRounds(
+      const historyBeforeAndTarget = prev.slice(0, roundIndex + 1);
+      const subsequentCount = prev.length - 1 - roundIndex;
+      if (subsequentCount <= 0) return prev;
+
+      const newSubsequent = generateMultipleRounds(
         activePlayers,
         courtCount,
-        prev,
+        historyBeforeAndTarget,
         players,
-        fromIndex
+        roundIndex + 1,
+        subsequentCount
       );
-    });
 
-    setPendingRecalcPrompt(null);
+      return [...historyBeforeAndTarget, ...newSubsequent];
+    });
   }, [pendingRecalcPrompt, activePlayers, courtCount, players]);
 
+  /**
+   * Dismiss recalculation prompt
+   */
   const handleDismissRecalculate = useCallback(() => {
     setPendingRecalcPrompt(null);
   }, []);
 
   /**
-   * Add a new player (mid-game or initial)
+   * Add a new player
    */
   const handleAddPlayer = useCallback(() => {
     setPlayers((prev) => {
@@ -237,8 +225,7 @@ export function useMatchSession() {
     // Actions
     handleInitialCourtCountChange,
     handleGenerateNext,
-    handleRegenerateRound,
-    handleDeleteRound,
+    handleRegenerateFromRound,
     handleUpdateRound,
     handleConfirmRecalculateSubsequent,
     handleDismissRecalculate,

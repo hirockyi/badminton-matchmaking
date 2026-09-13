@@ -23,8 +23,7 @@ export default function App() {
 
     handleInitialCourtCountChange,
     handleGenerateNext,
-    handleRegenerateRound,
-    handleDeleteRound,
+    handleRegenerateFromRound,
     handleUpdateRound,
     handleConfirmRecalculateSubsequent,
     handleDismissRecalculate,
@@ -94,8 +93,7 @@ export default function App() {
                   disabledReason={disabledReason}
                   onOpenSettings={() => setIsSettingsOpen(true)}
                   onUpdateRound={handleUpdateRound}
-                  onRegenerateRound={handleRegenerateRound}
-                  onDeleteRound={handleDeleteRound}
+                  onRegenerateFromRound={handleRegenerateFromRound}
                 />
               </section>
 
