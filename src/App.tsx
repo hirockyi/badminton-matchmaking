@@ -22,6 +22,7 @@ export default function App() {
     isSettingsOpen,
     setIsSettingsOpen,
     isGenerating,
+    generationProgress,
     pendingRecalcPrompt,
     regeneratingRoundIndex,
     setRegeneratingRoundIndex,
@@ -160,6 +161,7 @@ export default function App() {
       {/* Global Optimization Loading Overlay */}
       <LoadingOverlay
         isOpen={isGenerating}
+        progress={generationProgress}
         message="対戦表を最適化中..."
         subMessage="過去の重複や休憩バランスを計算しています"
       />

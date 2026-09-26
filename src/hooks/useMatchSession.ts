@@ -6,10 +6,10 @@ import {
   DEFAULT_COURT_COUNT,
   DEFAULT_PLAYER_COUNT,
   PLAYERS_PER_COURT,
+  TIME_BUDGET_PER_ROUND_MS,
 } from '../logic/constants';
 import {
-  generateMultipleRounds,
-  regenerateSubsequentRounds,
+  generateMultipleRoundsProgressive,
 } from '../logic/matchGenerator';
 
 // Helper to create initial default player list (1 to N)
@@ -33,6 +33,7 @@ export function useMatchSession() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Target round index for regeneration modal
   const [regeneratingRoundIndex, setRegeneratingRoundIndex] = useState<number | null>(null);
@@ -83,58 +84,75 @@ export function useMatchSession() {
   }, []);
 
   /**
-   * Generate next batch of rounds (with loading state yielding to UI thread)
+   * Generate next batch of rounds progressively (1-by-1 displayed in real time)
    */
-  const handleGenerateNext = useCallback(() => {
+  const handleGenerateNext = useCallback(async () => {
     if (!canGenerate || isGenerating) return;
     setIsGenerating(true);
+    setGenerationProgress({ current: 1, total: lookaheadCount });
 
-    // Yield execution to the browser to render the loading spinner/overlay
-    setTimeout(() => {
-      try {
-        const newRounds = generateMultipleRounds(
-          activePlayers,
-          courtCount,
-          rounds,
-          players,
-          rounds.length,
-          lookaheadCount
-        );
-        setRounds((prev) => [...prev, ...newRounds]);
-      } finally {
-        setIsGenerating(false);
-      }
-    }, 40);
+    try {
+      await generateMultipleRoundsProgressive(
+        activePlayers,
+        courtCount,
+        rounds,
+        players,
+        rounds.length,
+        lookaheadCount,
+        {
+          timeBudgetMs: TIME_BUDGET_PER_ROUND_MS,
+          onRoundGenerated: (round, progress) => {
+            setRounds((prev) => [...prev, round]);
+            setGenerationProgress(progress);
+          },
+        }
+      );
+    } finally {
+      setIsGenerating(false);
+      setGenerationProgress(null);
+    }
   }, [activePlayers, courtCount, rounds, players, lookaheadCount, canGenerate, isGenerating]);
 
   /**
-   * Regenerate all rounds starting from a specific index onward with updated settings
+   * Regenerate all rounds starting from a specific index onward with updated settings (progressively)
    */
   const handleConfirmRegenerateWithSettings = useCallback(
-    (fromRoundIndex: number, newCourtCount: number, newPlayers: Player[]) => {
+    async (fromRoundIndex: number, newCourtCount: number, newPlayers: Player[]) => {
       setCourtCount(newCourtCount);
       setPlayers(newPlayers);
       setRegeneratingRoundIndex(null);
       setIsGenerating(true);
 
-      setTimeout(() => {
-        try {
-          const active = newPlayers.filter((p) => p.active);
-          setRounds((prev) => {
-            return regenerateSubsequentRounds(
-              active,
-              newCourtCount,
-              prev,
-              newPlayers,
-              fromRoundIndex
-            );
-          });
-        } finally {
-          setIsGenerating(false);
-        }
-      }, 40);
+      const active = newPlayers.filter((p) => p.active);
+      const count = rounds.length - fromRoundIndex;
+      const historyBefore = rounds.slice(0, fromRoundIndex);
+
+      // Set to prior history, then add progressive rounds
+      setRounds(historyBefore);
+      setGenerationProgress({ current: 1, total: count });
+
+      try {
+        await generateMultipleRoundsProgressive(
+          active,
+          newCourtCount,
+          historyBefore,
+          newPlayers,
+          fromRoundIndex,
+          count,
+          {
+            timeBudgetMs: TIME_BUDGET_PER_ROUND_MS,
+            onRoundGenerated: (round, progress) => {
+              setRounds((prev) => [...prev, round]);
+              setGenerationProgress(progress);
+            },
+          }
+        );
+      } finally {
+        setIsGenerating(false);
+        setGenerationProgress(null);
+      }
     },
-    []
+    [rounds]
   );
 
   /**
@@ -160,37 +178,45 @@ export function useMatchSession() {
   );
 
   /**
-   * Confirm subsequent rounds recalculation after manual edit
+   * Confirm subsequent rounds recalculation after manual edit (progressively)
    */
-  const handleConfirmRecalculateSubsequent = useCallback(() => {
+  const handleConfirmRecalculateSubsequent = useCallback(async () => {
     if (!pendingRecalcPrompt) return;
     const { roundIndex } = pendingRecalcPrompt;
     setPendingRecalcPrompt(null);
     setIsGenerating(true);
 
-    setTimeout(() => {
-      try {
-        setRounds((prev) => {
-          const historyBeforeAndTarget = prev.slice(0, roundIndex + 1);
-          const subsequentCount = prev.length - 1 - roundIndex;
-          if (subsequentCount <= 0) return prev;
+    const historyBeforeAndTarget = rounds.slice(0, roundIndex + 1);
+    const subsequentCount = rounds.length - 1 - roundIndex;
+    if (subsequentCount <= 0) {
+      setIsGenerating(false);
+      return;
+    }
 
-          const newSubsequent = generateMultipleRounds(
-            activePlayers,
-            courtCount,
-            historyBeforeAndTarget,
-            players,
-            roundIndex + 1,
-            subsequentCount
-          );
+    setRounds(historyBeforeAndTarget);
+    setGenerationProgress({ current: 1, total: subsequentCount });
 
-          return [...historyBeforeAndTarget, ...newSubsequent];
-        });
-      } finally {
-        setIsGenerating(false);
-      }
-    }, 40);
-  }, [pendingRecalcPrompt, activePlayers, courtCount, players]);
+    try {
+      await generateMultipleRoundsProgressive(
+        activePlayers,
+        courtCount,
+        historyBeforeAndTarget,
+        players,
+        roundIndex + 1,
+        subsequentCount,
+        {
+          timeBudgetMs: TIME_BUDGET_PER_ROUND_MS,
+          onRoundGenerated: (round, progress) => {
+            setRounds((prev) => [...prev, round]);
+            setGenerationProgress(progress);
+          },
+        }
+      );
+    } finally {
+      setIsGenerating(false);
+      setGenerationProgress(null);
+    }
+  }, [pendingRecalcPrompt, rounds, activePlayers, courtCount, players]);
 
   /**
    * Dismiss recalculation prompt
@@ -238,6 +264,7 @@ export function useMatchSession() {
     setPendingRecalcPrompt(null);
     setRegeneratingRoundIndex(null);
     setIsGenerating(false);
+    setGenerationProgress(null);
   }, []);
 
   return {
@@ -255,6 +282,7 @@ export function useMatchSession() {
     isSettingsOpen,
     setIsSettingsOpen,
     isGenerating,
+    generationProgress,
     pendingRecalcPrompt,
     regeneratingRoundIndex,
     setRegeneratingRoundIndex,

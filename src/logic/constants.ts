@@ -1,9 +1,21 @@
 import { StaminaLevel } from './types';
 
 /**
- * Number of random candidates to generate and evaluate per round.
+ * Fallback candidate count when time budget is not used.
  */
 export const CANDIDATE_COUNT = 1000;
+
+/**
+ * Time budget (in milliseconds) per round during progressive match generation.
+ */
+export const TIME_BUDGET_PER_ROUND_MS = 800;
+
+/**
+ * Maximum combinations threshold to switch to exhaustive (100% full) enumeration.
+ * If total combinations <= 1200 (e.g. 1 court 4-8 players, 2 courts 8 players),
+ * the algorithm scans all possibilities in a few milliseconds and exits immediately.
+ */
+export const EXHAUSTIVE_SEARCH_MAX_COMBINATIONS = 1200;
 
 /**
  * Default number of lookahead rounds to generate.

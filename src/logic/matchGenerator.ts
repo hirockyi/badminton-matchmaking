@@ -1,7 +1,13 @@
 import { Player, Match, Round, RoundCandidate } from './types';
-import { CANDIDATE_COUNT, PLAYERS_PER_COURT } from './constants';
+import {
+  CANDIDATE_COUNT,
+  PLAYERS_PER_COURT,
+  TIME_BUDGET_PER_ROUND_MS,
+  EXHAUSTIVE_SEARCH_MAX_COMBINATIONS,
+} from './constants';
 import { scoreCandidate } from './scoring';
 import { reassignCourtIndices } from './courtReassignment';
+import { enumerateAllCandidates } from './candidateEnumerator';
 
 /**
  * Fisher-Yates shuffle (in-place).
@@ -48,23 +54,25 @@ function generateRandomCandidate(
 }
 
 /**
- * Generate a single optimized round.
- * Creates CANDIDATE_COUNT random candidates, scores each, and returns the best.
- * After selecting the best player pairings/matchups, reassigns court numbers
- * to minimize players staying on the same court as previous rounds.
+ * Generate a single round asynchronously with time budget and small-scale exhaustive search.
+ * 
+ * 1. If total combinations are small (<= EXHAUSTIVE_SEARCH_MAX_COMBINATIONS),
+ *    evaluates 100% of combinations in a few milliseconds without using the time budget!
+ * 2. If combinations are large, searches candidates up to timeBudgetMs (e.g. 800ms)
+ *    and exits immediately if a zero-penalty perfect candidate is found.
  */
-export function generateRound(
+export async function generateRoundAsync(
   activePlayers: Player[],
   courtCount: number,
   historyRounds: Round[],
   allPlayers: Player[],
-  currentRoundIndex: number
-): Round {
+  currentRoundIndex: number,
+  timeBudgetMs: number = TIME_BUDGET_PER_ROUND_MS
+): Promise<Round> {
   const lastRound = historyRounds.length > 0
     ? historyRounds[historyRounds.length - 1]
     : null;
 
-  // Ensure we have enough players
   if (activePlayers.length < PLAYERS_PER_COURT) {
     return {
       roundIndex: currentRoundIndex,
@@ -73,7 +81,6 @@ export function generateRound(
     };
   }
 
-  // Adjust court count if not enough active players (handles mid-session player leave)
   const effectiveCourtCount = Math.min(
     courtCount,
     Math.floor(activePlayers.length / PLAYERS_PER_COURT)
@@ -82,28 +89,68 @@ export function generateRound(
   let bestCandidate: RoundCandidate | null = null;
   let bestScore = -Infinity;
 
-  for (let i = 0; i < CANDIDATE_COUNT; i++) {
-    const candidate = generateRandomCandidate(activePlayers, effectiveCourtCount);
-    const score = scoreCandidate(
-      candidate,
-      historyRounds,
-      allPlayers,
-      activePlayers,
-      currentRoundIndex,
-      lastRound,
-      effectiveCourtCount
-    );
-    candidate.score = score;
+  // Check if small-scale exhaustive search is possible
+  const allCandidates = enumerateAllCandidates(
+    activePlayers,
+    effectiveCourtCount,
+    EXHAUSTIVE_SEARCH_MAX_COMBINATIONS
+  );
 
-    if (score > bestScore) {
-      bestScore = score;
-      bestCandidate = candidate;
+  if (allCandidates !== null && allCandidates.length > 0) {
+    // Mode A: Exhaustive search (100% complete coverage in a few milliseconds)
+    for (const candidate of allCandidates) {
+      const score = scoreCandidate(
+        candidate,
+        historyRounds,
+        allPlayers,
+        activePlayers,
+        currentRoundIndex,
+        lastRound,
+        effectiveCourtCount
+      );
+      candidate.score = score;
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+        if (score === 0) break; // Perfect score found
+      }
+    }
+  } else {
+    // Mode B: Time-budgeted Monte Carlo search (up to timeBudgetMs)
+    const startTime = performance.now();
+    let iterations = 0;
+
+    while (true) {
+      const candidate = generateRandomCandidate(activePlayers, effectiveCourtCount);
+      const score = scoreCandidate(
+        candidate,
+        historyRounds,
+        allPlayers,
+        activePlayers,
+        currentRoundIndex,
+        lastRound,
+        effectiveCourtCount
+      );
+      candidate.score = score;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+        if (score === 0) break; // Perfect score found, exit early
+      }
+
+      iterations++;
+
+      // Check time limit every 50 iterations to avoid performance.now() overhead
+      if (iterations % 50 === 0) {
+        if (performance.now() - startTime >= timeBudgetMs) {
+          break;
+        }
+      }
     }
   }
 
   const rawMatches = bestCandidate?.matches ?? [];
-
-  // Reassign court indices so players don't stay on the exact same court repeatedly
   const optimizedMatches = reassignCourtIndices(
     rawMatches,
     historyRounds,
@@ -118,8 +165,143 @@ export function generateRound(
 }
 
 /**
- * Generate multiple rounds consecutively.
- * Each round considers previous history including freshly generated rounds.
+ * Generate a single optimized round (synchronous version for testing and legacy calls).
+ */
+export function generateRound(
+  activePlayers: Player[],
+  courtCount: number,
+  historyRounds: Round[],
+  allPlayers: Player[],
+  currentRoundIndex: number
+): Round {
+  const lastRound = historyRounds.length > 0
+    ? historyRounds[historyRounds.length - 1]
+    : null;
+
+  if (activePlayers.length < PLAYERS_PER_COURT) {
+    return {
+      roundIndex: currentRoundIndex,
+      matches: [],
+      benchPlayerIds: activePlayers.map((p) => p.id),
+    };
+  }
+
+  const effectiveCourtCount = Math.min(
+    courtCount,
+    Math.floor(activePlayers.length / PLAYERS_PER_COURT)
+  );
+
+  let bestCandidate: RoundCandidate | null = null;
+  let bestScore = -Infinity;
+
+  // Check if small-scale exhaustive search is possible
+  const allCandidates = enumerateAllCandidates(
+    activePlayers,
+    effectiveCourtCount,
+    EXHAUSTIVE_SEARCH_MAX_COMBINATIONS
+  );
+
+  if (allCandidates !== null && allCandidates.length > 0) {
+    for (const candidate of allCandidates) {
+      const score = scoreCandidate(
+        candidate,
+        historyRounds,
+        allPlayers,
+        activePlayers,
+        currentRoundIndex,
+        lastRound,
+        effectiveCourtCount
+      );
+      candidate.score = score;
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+        if (score === 0) break;
+      }
+    }
+  } else {
+    for (let i = 0; i < CANDIDATE_COUNT; i++) {
+      const candidate = generateRandomCandidate(activePlayers, effectiveCourtCount);
+      const score = scoreCandidate(
+        candidate,
+        historyRounds,
+        allPlayers,
+        activePlayers,
+        currentRoundIndex,
+        lastRound,
+        effectiveCourtCount
+      );
+      candidate.score = score;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+        if (score === 0) break;
+      }
+    }
+  }
+
+  const rawMatches = bestCandidate?.matches ?? [];
+  const optimizedMatches = reassignCourtIndices(
+    rawMatches,
+    historyRounds,
+    lastRound
+  );
+
+  return {
+    roundIndex: currentRoundIndex,
+    matches: optimizedMatches,
+    benchPlayerIds: bestCandidate?.benchPlayerIds ?? [],
+  };
+}
+
+/**
+ * Generate multiple rounds progressively, yielding each round to the UI as it completes.
+ */
+export async function generateMultipleRoundsProgressive(
+  activePlayers: Player[],
+  courtCount: number,
+  historyRounds: Round[],
+  allPlayers: Player[],
+  startRoundIndex: number,
+  count: number,
+  options?: {
+    timeBudgetMs?: number;
+    onRoundGenerated?: (round: Round, progress: { current: number; total: number }) => void;
+  }
+): Promise<Round[]> {
+  const rounds: Round[] = [];
+  const cumulativeHistory = [...historyRounds];
+  const timeBudget = options?.timeBudgetMs ?? TIME_BUDGET_PER_ROUND_MS;
+
+  for (let i = 0; i < count; i++) {
+    const roundIndex = startRoundIndex + i;
+
+    const round = await generateRoundAsync(
+      activePlayers,
+      courtCount,
+      cumulativeHistory,
+      allPlayers,
+      roundIndex,
+      timeBudget
+    );
+    round.roundIndex = roundIndex;
+
+    rounds.push(round);
+    cumulativeHistory.push(round);
+
+    // Notify callback immediately with this single round and progress
+    options?.onRoundGenerated?.(round, { current: i + 1, total: count });
+
+    // Yield control to the browser to render the newly added round
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  return rounds;
+}
+
+/**
+ * Generate multiple rounds consecutively (synchronous).
  */
 export function generateMultipleRounds(
   activePlayers: Player[],
@@ -150,7 +332,7 @@ export function generateMultipleRounds(
 }
 
 /**
- * Regenerate a single round at a specific index, considering all rounds before it.
+ * Regenerate a single round at a specific index.
  */
 export function regenerateSingleRound(
   activePlayers: Player[],
