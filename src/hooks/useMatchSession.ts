@@ -109,8 +109,11 @@ export function useMatchSession() {
           onRoundStart: (progress) => {
             setGenerationProgress(progress);
           },
-          onRoundGenerated: (round) => {
+          onRoundGenerated: (round, nextProgress) => {
             setRounds((prev) => [...prev, round]);
+            if (nextProgress) {
+              setGenerationProgress(nextProgress);
+            }
           },
         }
       );
@@ -155,8 +158,11 @@ export function useMatchSession() {
             onRoundStart: (progress) => {
               setGenerationProgress(progress);
             },
-            onRoundGenerated: (round) => {
+            onRoundGenerated: (round, nextProgress) => {
               setRounds((prev) => [...prev, round]);
+              if (nextProgress) {
+                setGenerationProgress(nextProgress);
+              }
             },
           }
         );
@@ -226,8 +232,11 @@ export function useMatchSession() {
           onRoundStart: (progress) => {
             setGenerationProgress(progress);
           },
-          onRoundGenerated: (round) => {
+          onRoundGenerated: (round, nextProgress) => {
             setRounds((prev) => [...prev, round]);
+            if (nextProgress) {
+              setGenerationProgress(nextProgress);
+            }
           },
         }
       );

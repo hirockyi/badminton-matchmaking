@@ -118,6 +118,7 @@ export async function generateRoundAsync(
   } else {
     // Mode B: Time-budgeted Monte Carlo search (up to timeBudgetMs)
     const startTime = performance.now();
+    let lastYieldTime = startTime;
     let iterations = 0;
 
     while (true) {
@@ -143,8 +144,14 @@ export async function generateRoundAsync(
 
       // Check time limit every 50 iterations to avoid performance.now() overhead
       if (iterations % 50 === 0) {
-        if (performance.now() - startTime >= timeBudgetMs) {
+        const now = performance.now();
+        if (now - startTime >= timeBudgetMs) {
           break;
+        }
+        // Yield briefly every 100ms to keep UI and animations smooth
+        if (now - lastYieldTime >= 100) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          lastYieldTime = performance.now();
         }
       }
     }
@@ -264,7 +271,7 @@ export interface ProgressiveProgress {
 export interface ProgressiveGenerationOptions {
   timeBudgetMs?: number;
   onRoundStart?: (progress: ProgressiveProgress) => void;
-  onRoundGenerated?: (round: Round, progress: ProgressiveProgress) => void;
+  onRoundGenerated?: (round: Round, nextProgress: ProgressiveProgress | null) => void;
 }
 
 /**
@@ -287,13 +294,14 @@ export async function generateMultipleRoundsProgressive(
     const roundIndex = startRoundIndex + i;
     const current = i + 1;
     const roundNumber = roundIndex + 1;
-    const progress: ProgressiveProgress = { current, total: count, roundNumber };
+    const currentProgress: ProgressiveProgress = { current, total: count, roundNumber };
 
-    // 1. Notify that this round is now being generated/evaluated
-    options?.onRoundStart?.(progress);
-
-    // Yield control so browser paints the updated progress heading before heavy optimization
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // 1. Notify that the first round is now being generated/evaluated
+    if (i === 0) {
+      options?.onRoundStart?.(currentProgress);
+      // Yield control so browser paints the initial progress heading before optimization
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
 
     // 2. Generate the round
     const round = await generateRoundAsync(
@@ -309,10 +317,21 @@ export async function generateMultipleRoundsProgressive(
     rounds.push(round);
     cumulativeHistory.push(round);
 
-    // 3. Notify callback immediately with this single round and progress
-    options?.onRoundGenerated?.(round, progress);
+    // 3. Compute next round progress (or null if all completed)
+    const nextProgress: ProgressiveProgress | null =
+      i + 1 < count
+        ? {
+            current: current + 1,
+            total: count,
+            roundNumber: roundNumber + 1,
+          }
+        : null;
 
-    // Yield control to the browser to render the newly added round
+    // 4. Notify callback with both this completed round AND nextProgress
+    // This allows React to batch adding the round and advancing progress simultaneously
+    options?.onRoundGenerated?.(round, nextProgress);
+
+    // Yield control to the browser to render the newly added round and updated progress text
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 

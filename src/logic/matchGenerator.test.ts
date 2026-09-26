@@ -240,7 +240,7 @@ describe('generateMultipleRoundsProgressive', () => {
   it('reports onRoundStart and onRoundGenerated with accurate progress indexes', async () => {
     const players = Array.from({ length: 6 }, (_, i) => makePlayer(`p${i}`, 3));
     const startedSteps: { current: number; total: number; roundNumber: number }[] = [];
-    const generatedSteps: { current: number; total: number; roundNumber: number }[] = [];
+    const generatedNextProgress: (({ current: number; total: number; roundNumber: number } | null))[] = [];
 
     const rounds = await generateMultipleRoundsProgressive(
       players,
@@ -251,30 +251,29 @@ describe('generateMultipleRoundsProgressive', () => {
       3, // count 3
       {
         onRoundStart: (p) => startedSteps.push({ ...p }),
-        onRoundGenerated: (_r, p) => generatedSteps.push({ ...p }),
+        onRoundGenerated: (_r, nextP) => generatedNextProgress.push(nextP ? { ...nextP } : null),
       }
     );
 
     expect(rounds).toHaveLength(3);
 
-    // On start, steps should be 1/3, 2/3, 3/3 with roundNumber 1, 2, 3
+    // Initial onRoundStart is called for round 1
     expect(startedSteps).toEqual([
       { current: 1, total: 3, roundNumber: 1 },
-      { current: 2, total: 3, roundNumber: 2 },
-      { current: 3, total: 3, roundNumber: 3 },
     ]);
 
-    // On generated, steps should also be 1/3, 2/3, 3/3 with roundNumber 1, 2, 3
-    expect(generatedSteps).toEqual([
-      { current: 1, total: 3, roundNumber: 1 },
+    // On round generated, nextProgress correctly signals the upcoming round or null on completion
+    expect(generatedNextProgress).toEqual([
       { current: 2, total: 3, roundNumber: 2 },
       { current: 3, total: 3, roundNumber: 3 },
+      null,
     ]);
   });
 
   it('correctly tracks roundNumber when startRoundIndex > 0', async () => {
     const players = Array.from({ length: 6 }, (_, i) => makePlayer(`p${i}`, 3));
     const startedSteps: { current: number; total: number; roundNumber: number }[] = [];
+    const generatedNextProgress: (({ current: number; total: number; roundNumber: number } | null))[] = [];
 
     await generateMultipleRoundsProgressive(
       players,
@@ -285,12 +284,16 @@ describe('generateMultipleRoundsProgressive', () => {
       2, // count 2
       {
         onRoundStart: (p) => startedSteps.push({ ...p }),
+        onRoundGenerated: (_r, nextP) => generatedNextProgress.push(nextP ? { ...nextP } : null),
       }
     );
 
     expect(startedSteps).toEqual([
       { current: 1, total: 2, roundNumber: 6 },
+    ]);
+    expect(generatedNextProgress).toEqual([
       { current: 2, total: 2, roundNumber: 7 },
+      null,
     ]);
   });
 });
