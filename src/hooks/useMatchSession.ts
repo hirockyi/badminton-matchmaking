@@ -32,6 +32,7 @@ export function useMatchSession() {
   const [rounds, setRounds] = useState<Round[]>([]);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Target round index for regeneration modal
   const [regeneratingRoundIndex, setRegeneratingRoundIndex] = useState<number | null>(null);
@@ -82,20 +83,29 @@ export function useMatchSession() {
   }, []);
 
   /**
-   * Generate next batch of rounds
+   * Generate next batch of rounds (with loading state yielding to UI thread)
    */
   const handleGenerateNext = useCallback(() => {
-    if (!canGenerate) return;
-    const newRounds = generateMultipleRounds(
-      activePlayers,
-      courtCount,
-      rounds,
-      players,
-      rounds.length,
-      lookaheadCount
-    );
-    setRounds((prev) => [...prev, ...newRounds]);
-  }, [activePlayers, courtCount, rounds, players, lookaheadCount, canGenerate]);
+    if (!canGenerate || isGenerating) return;
+    setIsGenerating(true);
+
+    // Yield execution to the browser to render the loading spinner/overlay
+    setTimeout(() => {
+      try {
+        const newRounds = generateMultipleRounds(
+          activePlayers,
+          courtCount,
+          rounds,
+          players,
+          rounds.length,
+          lookaheadCount
+        );
+        setRounds((prev) => [...prev, ...newRounds]);
+      } finally {
+        setIsGenerating(false);
+      }
+    }, 40);
+  }, [activePlayers, courtCount, rounds, players, lookaheadCount, canGenerate, isGenerating]);
 
   /**
    * Regenerate all rounds starting from a specific index onward with updated settings
@@ -104,19 +114,25 @@ export function useMatchSession() {
     (fromRoundIndex: number, newCourtCount: number, newPlayers: Player[]) => {
       setCourtCount(newCourtCount);
       setPlayers(newPlayers);
-
-      const active = newPlayers.filter((p) => p.active);
-
-      setRounds((prev) => {
-        return regenerateSubsequentRounds(
-          active,
-          newCourtCount,
-          prev,
-          newPlayers,
-          fromRoundIndex
-        );
-      });
       setRegeneratingRoundIndex(null);
+      setIsGenerating(true);
+
+      setTimeout(() => {
+        try {
+          const active = newPlayers.filter((p) => p.active);
+          setRounds((prev) => {
+            return regenerateSubsequentRounds(
+              active,
+              newCourtCount,
+              prev,
+              newPlayers,
+              fromRoundIndex
+            );
+          });
+        } finally {
+          setIsGenerating(false);
+        }
+      }, 40);
     },
     []
   );
@@ -150,23 +166,30 @@ export function useMatchSession() {
     if (!pendingRecalcPrompt) return;
     const { roundIndex } = pendingRecalcPrompt;
     setPendingRecalcPrompt(null);
+    setIsGenerating(true);
 
-    setRounds((prev) => {
-      const historyBeforeAndTarget = prev.slice(0, roundIndex + 1);
-      const subsequentCount = prev.length - 1 - roundIndex;
-      if (subsequentCount <= 0) return prev;
+    setTimeout(() => {
+      try {
+        setRounds((prev) => {
+          const historyBeforeAndTarget = prev.slice(0, roundIndex + 1);
+          const subsequentCount = prev.length - 1 - roundIndex;
+          if (subsequentCount <= 0) return prev;
 
-      const newSubsequent = generateMultipleRounds(
-        activePlayers,
-        courtCount,
-        historyBeforeAndTarget,
-        players,
-        roundIndex + 1,
-        subsequentCount
-      );
+          const newSubsequent = generateMultipleRounds(
+            activePlayers,
+            courtCount,
+            historyBeforeAndTarget,
+            players,
+            roundIndex + 1,
+            subsequentCount
+          );
 
-      return [...historyBeforeAndTarget, ...newSubsequent];
-    });
+          return [...historyBeforeAndTarget, ...newSubsequent];
+        });
+      } finally {
+        setIsGenerating(false);
+      }
+    }, 40);
   }, [pendingRecalcPrompt, activePlayers, courtCount, players]);
 
   /**
@@ -214,6 +237,7 @@ export function useMatchSession() {
     setIsSettingsOpen(false);
     setPendingRecalcPrompt(null);
     setRegeneratingRoundIndex(null);
+    setIsGenerating(false);
   }, []);
 
   return {
@@ -230,6 +254,7 @@ export function useMatchSession() {
     disabledReason,
     isSettingsOpen,
     setIsSettingsOpen,
+    isGenerating,
     pendingRecalcPrompt,
     regeneratingRoundIndex,
     setRegeneratingRoundIndex,

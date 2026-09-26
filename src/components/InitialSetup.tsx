@@ -15,6 +15,7 @@ interface InitialSetupProps {
   onStartSession: () => void;
   canGenerate: boolean;
   disabledReason?: string;
+  isGenerating?: boolean;
 }
 
 export const InitialSetup: React.FC<InitialSetupProps> = ({
@@ -28,6 +29,7 @@ export const InitialSetup: React.FC<InitialSetupProps> = ({
   onStartSession,
   canGenerate,
   disabledReason,
+  isGenerating = false,
 }) => {
   return (
     <div className="space-y-3.5 animate-in fade-in duration-150">
@@ -74,14 +76,24 @@ export const InitialSetup: React.FC<InitialSetupProps> = ({
         <button
           type="button"
           onClick={onStartSession}
-          disabled={!canGenerate}
+          disabled={!canGenerate || isGenerating}
           className={`w-full py-4 px-4 rounded-xl font-extrabold text-white text-base sm:text-lg tracking-wide transition-all shadow-md active:scale-[0.98] flex items-center justify-center gap-2 ${
-            canGenerate
+            canGenerate && !isGenerating
               ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-emerald-500/25'
               : 'bg-slate-300 text-slate-500 shadow-none cursor-not-allowed'
           }`}
         >
-          <span className="text-xl">🏸</span> 対戦表を生成して練習を開始
+          {isGenerating ? (
+            <>
+              <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
+              <span>対戦表を計算中...</span>
+            </>
+          ) : (
+            <>
+              <span className="text-xl">🏸</span>
+              <span>対戦表を生成して練習を開始</span>
+            </>
+          )}
         </button>
 
         {!canGenerate && disabledReason && (

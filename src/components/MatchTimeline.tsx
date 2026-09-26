@@ -11,6 +11,7 @@ interface MatchTimelineProps {
   onGenerateNext: () => void;
   canGenerate: boolean;
   disabledReason?: string;
+  isGenerating?: boolean;
   onOpenSettings: () => void;
   onUpdateRound: (roundIndex: number, updatedRound: Round, hasSubsequent: boolean) => void;
   onOpenRegenerateModal: (roundIndex: number) => void;
@@ -26,6 +27,7 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
   onGenerateNext,
   canGenerate,
   disabledReason,
+  isGenerating = false,
   onOpenSettings,
   onUpdateRound,
   onOpenRegenerateModal,
@@ -148,8 +150,9 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
                       <button
                         type="button"
                         onClick={() => onOpenRegenerateModal(round.roundIndex)}
+                        disabled={isGenerating}
                         title={isLastRound ? 'コート・メンバーを変更して再抽選' : 'コート・メンバーを変更して以降を再抽選'}
-                        className="text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200/60 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1 shadow-2xs"
+                        className="text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200/60 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1 shadow-2xs disabled:opacity-50"
                       >
                         <span>🔄</span>
                         {isLastRound ? '再抽選' : '以降を再抽選'}
@@ -304,7 +307,8 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
           <button
             type="button"
             onClick={onOpenSettings}
-            className="px-3.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 active:bg-slate-200 text-slate-900 text-xs sm:text-sm font-bold rounded-lg shadow-2xs transition-colors shrink-0"
+            disabled={isGenerating}
+            className="px-3.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 active:bg-slate-200 text-slate-900 text-xs sm:text-sm font-bold rounded-lg shadow-2xs transition-colors shrink-0 disabled:opacity-50"
           >
             設定を変える
           </button>
@@ -320,7 +324,8 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
               id="timeline-lookahead-select"
               value={lookaheadCount}
               onChange={(e) => onLookaheadCountChange(Number(e.target.value))}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg bg-white text-slate-900 font-bold text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+              disabled={isGenerating}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg bg-white text-slate-900 font-bold text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs disabled:opacity-50"
             >
               {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
                 <option key={num} value={num}>
@@ -333,15 +338,24 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
           <button
             type="button"
             onClick={onGenerateNext}
-            disabled={!canGenerate}
+            disabled={!canGenerate || isGenerating}
             className={`w-full py-3.5 px-4 rounded-xl font-extrabold text-white text-base tracking-wide transition-all shadow-md active:scale-[0.98] flex items-center justify-center gap-2 ${
-              canGenerate
+              canGenerate && !isGenerating
                 ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-emerald-500/25'
                 : 'bg-slate-300 text-slate-500 shadow-none cursor-not-allowed'
             }`}
           >
-            <span className="text-xl">🎲</span>
-            ＋ 続きの {lookaheadCount} 試合を生成する
+            {isGenerating ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
+                <span>続きの試合を計算中...</span>
+              </>
+            ) : (
+              <>
+                <span className="text-xl">🎲</span>
+                <span>＋ 続きの {lookaheadCount} 試合を生成する</span>
+              </>
+            )}
           </button>
 
           {!canGenerate && disabledReason && (

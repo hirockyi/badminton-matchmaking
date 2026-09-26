@@ -12,6 +12,7 @@ interface RegenerateModalProps {
   courtCount: number;
   players: Player[];
   onConfirmRegenerate: (newCourtCount: number, newPlayers: Player[]) => void;
+  isGenerating?: boolean;
 }
 
 export const RegenerateModal: React.FC<RegenerateModalProps> = ({
@@ -22,6 +23,7 @@ export const RegenerateModal: React.FC<RegenerateModalProps> = ({
   courtCount,
   players,
   onConfirmRegenerate,
+  isGenerating = false,
 }) => {
   const [draftCourtCount, setDraftCourtCount] = useState(courtCount);
   const [draftPlayers, setDraftPlayers] = useState<Player[]>(players);
@@ -64,7 +66,7 @@ export const RegenerateModal: React.FC<RegenerateModalProps> = ({
   };
 
   const handleConfirm = () => {
-    if (!canRegenerate) return;
+    if (!canRegenerate || isGenerating) return;
     onConfirmRegenerate(draftCourtCount, draftPlayers);
     onClose();
   };
@@ -138,24 +140,36 @@ export const RegenerateModal: React.FC<RegenerateModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-sm rounded-xl transition-colors"
+              disabled={isGenerating}
+              className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-sm rounded-xl transition-colors disabled:opacity-50"
             >
               キャンセル
             </button>
             <button
               type="button"
               onClick={handleConfirm}
-              disabled={!canRegenerate}
+              disabled={!canRegenerate || isGenerating}
               className={`flex-2 py-3 px-4 rounded-xl font-extrabold text-white text-sm sm:text-base tracking-wide transition-all shadow-md flex items-center justify-center gap-1.5 ${
-                canRegenerate
+                canRegenerate && !isGenerating
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 active:scale-[0.98]'
                   : 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
               }`}
             >
-              <span>🎲</span>
-              {isLastRound
-                ? `第 ${fromRoundIndex + 1} 試合を再抽選`
-                : `第 ${fromRoundIndex + 1} 試合以降（${subsequentCount}試合）を再抽選`}
+              {isGenerating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
+                  <span>再計算中...</span>
+                </>
+              ) : (
+                <>
+                  <span>🎲</span>
+                  <span>
+                    {isLastRound
+                      ? `第 ${fromRoundIndex + 1} 試合を再抽選`
+                      : `第 ${fromRoundIndex + 1} 試合以降（${subsequentCount}試合）を再抽選`}
+                  </span>
+                </>
+              )}
             </button>
           </div>
         </div>

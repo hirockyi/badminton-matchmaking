@@ -5,6 +5,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { RegenerateModal } from './components/RegenerateModal';
 import { RegenerateConfirmModal } from './components/RegenerateConfirmModal';
 import { Statistics } from './components/Statistics';
+import { LoadingOverlay } from './components/common/LoadingOverlay';
 
 export default function App() {
   const {
@@ -20,6 +21,7 @@ export default function App() {
     disabledReason,
     isSettingsOpen,
     setIsSettingsOpen,
+    isGenerating,
     pendingRecalcPrompt,
     regeneratingRoundIndex,
     setRegeneratingRoundIndex,
@@ -37,7 +39,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-900 flex justify-center">
       {/* Responsive app container - scales nicely from small phones to Pixel Pro XL and tablets */}
-      <div className="w-full max-w-xl min-h-screen bg-slate-50 flex flex-col shadow-2xl border-x border-slate-200">
+      <div className="w-full max-w-xl min-h-screen bg-slate-50 flex flex-col shadow-2xl border-x border-slate-200 relative">
         {/* Top Header */}
         <header className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-4 py-3 sticky top-0 z-20 shadow-md flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -49,7 +51,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(true)}
-                className="text-sm bg-emerald-800/80 hover:bg-emerald-900 active:bg-emerald-950 px-3 py-1.5 rounded-lg font-bold text-emerald-100 flex items-center gap-1 transition-colors"
+                disabled={isGenerating}
+                className="text-sm bg-emerald-800/80 hover:bg-emerald-900 active:bg-emerald-950 px-3 py-1.5 rounded-lg font-bold text-emerald-100 flex items-center gap-1 transition-colors disabled:opacity-50"
               >
                 <span>⚙️</span> 設定
               </button>
@@ -57,7 +60,8 @@ export default function App() {
             <button
               type="button"
               onClick={handleReset}
-              className="text-sm bg-emerald-800/50 hover:bg-emerald-900/80 active:bg-emerald-950 px-2.5 py-1.5 rounded-lg text-emerald-200 font-semibold transition-colors"
+              disabled={isGenerating}
+              className="text-sm bg-emerald-800/50 hover:bg-emerald-900/80 active:bg-emerald-950 px-2.5 py-1.5 rounded-lg text-emerald-200 font-semibold transition-colors disabled:opacity-50"
             >
               初期化
             </button>
@@ -79,6 +83,7 @@ export default function App() {
               onStartSession={handleGenerateNext}
               canGenerate={canGenerate}
               disabledReason={disabledReason}
+              isGenerating={isGenerating}
             />
           ) : (
             /* Screen 2: Active Matches Timeline */
@@ -94,6 +99,7 @@ export default function App() {
                   onGenerateNext={handleGenerateNext}
                   canGenerate={canGenerate}
                   disabledReason={disabledReason}
+                  isGenerating={isGenerating}
                   onOpenSettings={() => setIsSettingsOpen(true)}
                   onUpdateRound={handleUpdateRound}
                   onOpenRegenerateModal={(roundIndex) => setRegeneratingRoundIndex(roundIndex)}
@@ -134,6 +140,7 @@ export default function App() {
         totalRounds={rounds.length}
         courtCount={courtCount}
         players={players}
+        isGenerating={isGenerating}
         onConfirmRegenerate={(newCourtCount, newPlayers) => {
           if (regeneratingRoundIndex !== null) {
             handleConfirmRegenerateWithSettings(regeneratingRoundIndex, newCourtCount, newPlayers);
@@ -148,6 +155,13 @@ export default function App() {
         subsequentRoundsCount={pendingRecalcPrompt?.subsequentCount ?? 0}
         onConfirmRegenerate={handleConfirmRecalculateSubsequent}
         onKeepExisting={handleDismissRecalculate}
+      />
+
+      {/* Global Optimization Loading Overlay */}
+      <LoadingOverlay
+        isOpen={isGenerating}
+        message="対戦表を最適化中..."
+        subMessage="過去の重複や休憩バランスを計算しています"
       />
     </div>
   );
