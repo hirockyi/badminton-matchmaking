@@ -37,6 +37,22 @@ export const DEFAULT_STAMINA: StaminaLevel = 3;
 
 // --- Scoring Weights ---
 // Higher weight = more influence on final score. Penalties are subtracted.
+// Priority order: Play count fairness & spread > Rest/play continuity > Pair/opp duplication
+
+/** Weight for deviation from stamina-adjusted target play count (absolute count based). */
+export const WEIGHT_PLAY_COUNT_FAIRNESS = 30;
+
+/** Weight for maximum spread penalty (difference between max and min played games within same stamina). */
+export const WEIGHT_MAX_MIN_SPREAD = 50;
+
+/** Weight for deviation from stamina-adjusted target play rate (legacy alias). */
+export const WEIGHT_STAMINA_FIT = WEIGHT_PLAY_COUNT_FAIRNESS;
+
+/** Weight for consecutive play penalty (base weight scaled by player stamina). */
+export const WEIGHT_CONSECUTIVE_PLAY = 10;
+
+/** Weight for consecutive rest penalty (base weight scaled by player stamina). */
+export const WEIGHT_CONSECUTIVE_REST = 10;
 
 /** Weight for pair duplication penalty (avoiding teaming up with the same person). */
 export const WEIGHT_PAIR_DUPLICATION = 12;
@@ -44,23 +60,13 @@ export const WEIGHT_PAIR_DUPLICATION = 12;
 /** Weight for opponent duplication penalty (avoiding playing against the same person). */
 export const WEIGHT_OPPONENT_DUPLICATION = 8;
 
-/** Weight for consecutive play penalty (base weight scaled by player stamina). */
-export const WEIGHT_CONSECUTIVE_PLAY = 8;
-
-/** Weight for consecutive rest penalty (base weight scaled by player stamina). */
-export const WEIGHT_CONSECUTIVE_REST = 8;
-
-/** Weight for deviation from stamina-adjusted target play rate. */
-export const WEIGHT_STAMINA_FIT = 15;
-
 // --- Recency Decay Rates ---
-// Closer rounds carry full weight (1.0). Older rounds decay exponentially.
-// e.g. rate = 0.8: 1 round ago = 1.0, 2 rounds ago = 0.8, 3 rounds ago = 0.64, 4 rounds ago = 0.51...
+// Closer rounds carry full weight (1.0). Older rounds decay exponentially based on cycle length.
 
-/** Decay rate per elapsed round for pair duplication. */
-export const DECAY_RATE_PAIR_DUPLICATION = 0.80;
+/** Fallback decay rate per elapsed round for pair duplication if not computed dynamically. */
+export const DECAY_RATE_PAIR_DUPLICATION = 0.85;
 
-/** Decay rate per elapsed round for opponent duplication. */
+/** Fallback decay rate per elapsed round for opponent duplication if not computed dynamically. */
 export const DECAY_RATE_OPPONENT_DUPLICATION = 0.80;
 
 /**
@@ -68,35 +74,35 @@ export const DECAY_RATE_OPPONENT_DUPLICATION = 0.80;
  * Used to calculate dynamic target play rates based on court capacity vs player count.
  */
 export const STAMINA_RELATIVE_WEIGHTS: Record<StaminaLevel, number> = {
-  1: 0.50, // 50% relative to standard
-  2: 0.75, // 75% relative to standard
-  3: 1.00, // 100% (median / standard baseline)
-  4: 1.25, // 125% relative to standard
-  5: 1.50, // 150% relative to standard
+  1: 0.5,
+  2: 0.75,
+  3: 1.0,
+  4: 1.25,
+  5: 1.5,
 };
 
 /**
  * Multiplier for consecutive play penalty by stamina.
- * Stamina 1: heavily penalized for playing back-to-back games (must avoid consecutive games).
- * Stamina 5: no penalty for consecutive games (can play continuously).
+ * Stamina 1: strict aversion (5.0x).
+ * Stamina 5: no penalty (0.0x) - happy to play back-to-back.
  */
 export const STAMINA_CONSECUTIVE_PLAY_MULTIPLIER: Record<StaminaLevel, number> = {
-  1: 5.0, // Strict avoidance of back-to-back games
+  1: 5.0,
   2: 2.5,
-  3: 1.0, // Standard consecutive play penalty
+  3: 1.0,
   4: 0.3,
-  5: 0.0, // Stamina 5 loves consecutive games (no penalty)
+  5: 0.0,
 };
 
 /**
  * Multiplier for consecutive rest penalty by stamina.
- * Stamina 5: heavily penalized for resting back-to-back rounds (should not sit out continuously).
- * Stamina 1: no penalty for continuous rest (resting is welcomed).
+ * Stamina 5: strict aversion to resting (4.0x).
+ * Stamina 1: no penalty (0.0x) - happy to rest multiple rounds.
  */
 export const STAMINA_CONSECUTIVE_REST_MULTIPLIER: Record<StaminaLevel, number> = {
-  1: 0.0, // Stamina 1 can rest continuously without penalty
+  1: 0.0,
   2: 0.3,
-  3: 1.0, // Standard consecutive rest penalty
+  3: 1.0,
   4: 2.5,
-  5: 4.0, // Stamina 5 should not sit out continuously
+  5: 4.0,
 };

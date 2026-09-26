@@ -46,6 +46,55 @@ describe('generateRound', () => {
   });
 });
 
+describe('play count fairness across multiple rounds', () => {
+  it('strictly limits match count difference to <= 1 among same stamina players (1 court, 6 players, 9 rounds)', () => {
+    // 6 players with standard stamina 3, 1 court (4 slots), 9 rounds -> total 36 slots -> exactly 6 matches per player!
+    const players = Array.from({ length: 6 }, (_, i) => makePlayer(`p${i}`, 3));
+    const rounds = generateMultipleRounds(players, 1, [], players, 0, 9);
+
+    const playCounts = new Map<string, number>();
+    for (const p of players) playCounts.set(p.id, 0);
+
+    for (const round of rounds) {
+      for (const m of round.matches) {
+        for (const pid of [...m.team1, ...m.team2]) {
+          playCounts.set(pid, (playCounts.get(pid) || 0) + 1);
+        }
+      }
+    }
+
+    const counts = Array.from(playCounts.values());
+    const min = Math.min(...counts);
+    const max = Math.max(...counts);
+
+    // Difference between most played and least played must be <= 1 (ideally exactly 0)
+    expect(max - min).toBeLessThanOrEqual(1);
+  });
+
+  it('strictly limits match count difference to <= 1 among same stamina players (2 courts, 10 players, 10 rounds)', () => {
+    // 10 players with stamina 3, 2 courts (8 slots), 10 rounds -> total 80 slots -> exactly 8 matches each
+    const players = Array.from({ length: 10 }, (_, i) => makePlayer(`p${i}`, 3));
+    const rounds = generateMultipleRounds(players, 2, [], players, 0, 10);
+
+    const playCounts = new Map<string, number>();
+    for (const p of players) playCounts.set(p.id, 0);
+
+    for (const round of rounds) {
+      for (const m of round.matches) {
+        for (const pid of [...m.team1, ...m.team2]) {
+          playCounts.set(pid, (playCounts.get(pid) || 0) + 1);
+        }
+      }
+    }
+
+    const counts = Array.from(playCounts.values());
+    const min = Math.min(...counts);
+    const max = Math.max(...counts);
+
+    expect(max - min).toBeLessThanOrEqual(1);
+  });
+});
+
 describe('stamina effects in multi-round generation', () => {
   it('gives significantly more play time to stamina 5 than stamina 1', () => {
     const players: Player[] = [
@@ -126,13 +175,11 @@ describe('court reassignment in multi-court generation', () => {
     for (const p of players) {
       const c0 = court0Count.get(p.id) || 0;
       const c1 = court1Count.get(p.id) || 0;
-      // No player should be stuck exclusively on one court (e.g. 6:0)
       expect(c0).toBeGreaterThan(0);
       expect(c1).toBeGreaterThan(0);
       totalDiff += Math.abs(c0 - c1);
     }
 
-    // Average difference should be small (around 2 or less)
     const avgDiff = totalDiff / players.length;
     expect(avgDiff).toBeLessThanOrEqual(2.5);
   });
@@ -163,9 +210,6 @@ describe('court reassignment in multi-court generation', () => {
       }
     }
 
-    // With 3 courts and 5 transitions (12 players * 5 = 60 player-rounds),
-    // purely random allocation would result in ~20 instances on the same court.
-    // Optimized court reassignment brings it significantly lower (<= 15).
     expect(consecutiveSameCourt).toBeLessThanOrEqual(15);
   });
 });

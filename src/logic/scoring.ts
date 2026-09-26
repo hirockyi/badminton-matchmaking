@@ -1,10 +1,11 @@
-import { Match, Player, Round, RoundCandidate } from './types';
+import { Match, Player, Round, RoundCandidate, StaminaLevel } from './types';
 import {
   WEIGHT_PAIR_DUPLICATION,
   WEIGHT_OPPONENT_DUPLICATION,
   WEIGHT_CONSECUTIVE_PLAY,
   WEIGHT_CONSECUTIVE_REST,
-  WEIGHT_STAMINA_FIT,
+  WEIGHT_PLAY_COUNT_FAIRNESS,
+  WEIGHT_MAX_MIN_SPREAD,
   PLAYERS_PER_COURT,
   STAMINA_RELATIVE_WEIGHTS,
   STAMINA_CONSECUTIVE_PLAY_MULTIPLIER,
@@ -215,9 +216,11 @@ export function calcConsecutiveRestPenalty(
 }
 
 /**
- * Stamina fit penalty.
+ * Play count deviation penalty (absolute match count based).
+ * Evaluates the squared error between actual matches played and theoretical target matches.
+ * Unlike percentage rate, this does NOT dilute as rounds increase.
  */
-export function calcStaminaFitPenalty(
+export function calcPlayCountDeviationPenalty(
   candidate: RoundCandidate,
   confirmedRounds: Round[],
   activePlayers: Player[],
@@ -243,13 +246,88 @@ export function calcStaminaFitPenalty(
       gamesPlayed++;
     }
 
-    const actualRate = gamesPlayed / availableRounds;
     const targetRate = targetRates.get(player.id) ?? 0.8;
+    // Theoretical target number of matches to date (e.g. 5 rounds * 0.8 = 4.0 matches)
+    const targetMatchCount = availableRounds * targetRate;
 
-    totalPenalty += (actualRate - targetRate) ** 2;
+    // Squared deviation from absolute target match count
+    totalPenalty += Math.pow(gamesPlayed - targetMatchCount, 2);
   }
 
-  return totalPenalty * 10;
+  return totalPenalty;
+}
+
+/**
+ * Legacy alias for backwards compatibility.
+ */
+export function calcStaminaFitPenalty(
+  candidate: RoundCandidate,
+  confirmedRounds: Round[],
+  activePlayers: Player[],
+  currentRoundIndex: number,
+  courtCount: number
+): number {
+  return calcPlayCountDeviationPenalty(
+    candidate,
+    confirmedRounds,
+    activePlayers,
+    currentRoundIndex,
+    courtCount
+  );
+}
+
+/**
+ * Max-Min spread penalty within each stamina level.
+ * Prevents players of the same stamina from having a difference of >= 2 matches.
+ * Difference of <= 1 is natural (penalty 0); difference >= 2 is heavily penalized ((diff - 1)^2).
+ */
+export function calcMaxMinSpreadPenalty(
+  candidate: RoundCandidate,
+  confirmedRounds: Round[],
+  activePlayers: Player[]
+): number {
+  const currentPlaying = getPlayingPlayerIds(candidate.matches);
+
+  // Group players by stamina
+  const playersByStamina = new Map<StaminaLevel, Player[]>();
+  for (const p of activePlayers) {
+    if (!playersByStamina.has(p.stamina)) {
+      playersByStamina.set(p.stamina, []);
+    }
+    playersByStamina.get(p.stamina)!.push(p);
+  }
+
+  let totalPenalty = 0;
+
+  for (const [, group] of playersByStamina.entries()) {
+    if (group.length < 2) continue;
+
+    let minPlayed = Infinity;
+    let maxPlayed = -Infinity;
+
+    for (const player of group) {
+      let gamesPlayed = 0;
+      for (const round of confirmedRounds) {
+        if (getPlayingPlayerIds(round.matches).has(player.id)) {
+          gamesPlayed++;
+        }
+      }
+      if (currentPlaying.has(player.id)) {
+        gamesPlayed++;
+      }
+
+      if (gamesPlayed < minPlayed) minPlayed = gamesPlayed;
+      if (gamesPlayed > maxPlayed) maxPlayed = gamesPlayed;
+    }
+
+    const diff = maxPlayed - minPlayed;
+    if (diff > 1) {
+      // Heavily penalize any spread >= 2
+      totalPenalty += Math.pow(diff - 1, 2);
+    }
+  }
+
+  return totalPenalty;
 }
 
 /**
@@ -286,20 +364,28 @@ export function scoreCandidate(
   );
   const consecutivePlayPenalty = calcConsecutivePlayPenalty(candidate, lastRound, playersById);
   const consecutiveRestPenalty = calcConsecutiveRestPenalty(candidate, lastRound, playersById);
-  const staminaFitPenalty = calcStaminaFitPenalty(
+
+  // High priority: Fairness of play count
+  const playCountPenalty = calcPlayCountDeviationPenalty(
     candidate,
     confirmedRounds,
     activePlayers,
     currentRoundIndex,
     courtCount
   );
+  const maxMinSpreadPenalty = calcMaxMinSpreadPenalty(
+    candidate,
+    confirmedRounds,
+    activePlayers
+  );
 
   const score =
-    - WEIGHT_PAIR_DUPLICATION * pairPenalty
-    - WEIGHT_OPPONENT_DUPLICATION * opponentPenalty
+    - WEIGHT_PLAY_COUNT_FAIRNESS * playCountPenalty
+    - WEIGHT_MAX_MIN_SPREAD * maxMinSpreadPenalty
     - WEIGHT_CONSECUTIVE_PLAY * consecutivePlayPenalty
     - WEIGHT_CONSECUTIVE_REST * consecutiveRestPenalty
-    - WEIGHT_STAMINA_FIT * staminaFitPenalty;
+    - WEIGHT_PAIR_DUPLICATION * pairPenalty
+    - WEIGHT_OPPONENT_DUPLICATION * opponentPenalty;
 
   return score;
 }

@@ -6,7 +6,8 @@ import {
   calcConsecutiveRestPenalty,
   calcDynamicTargetPlayRates,
   calcDynamicDecayRates,
-  calcStaminaFitPenalty,
+  calcPlayCountDeviationPenalty,
+  calcMaxMinSpreadPenalty,
   scoreCandidate,
 } from './scoring';
 import { Player, Round, RoundCandidate, StaminaLevel } from './types';
@@ -36,16 +37,12 @@ function makeCandidate(matches: RoundCandidate['matches'], bench: string[] = [])
 
 describe('calcDynamicDecayRates', () => {
   it('calculates higher decay retention for larger player-to-court ratios (longer cycle)', () => {
-    // 1 court, 8 players -> cycle is 14 rounds -> slow decay (high retention rate close to 1)
     const { pairDecayRate: decay1C8P } = calcDynamicDecayRates(8, 1);
-    // 2 courts, 8 players -> cycle is 7 rounds -> faster decay
     const { pairDecayRate: decay2C8P } = calcDynamicDecayRates(8, 2);
-    // 1 court, 5 players -> cycle is 5 rounds -> even faster decay
     const { pairDecayRate: decay1C5P } = calcDynamicDecayRates(5, 1);
 
     expect(decay1C8P).toBeGreaterThan(decay2C8P);
     expect(decay2C8P).toBeGreaterThan(decay1C5P);
-    // For 8 players 1 court, cycle is 14 -> 0.5^(1/14) ≈ 0.95
     expect(decay1C8P).toBeCloseTo(0.95, 1);
   });
 });
@@ -74,6 +71,60 @@ describe('calcDynamicTargetPlayRates', () => {
 
     expect(highRate).toBeGreaterThan(midRate);
     expect(midRate).toBeGreaterThan(lowRate);
+  });
+});
+
+describe('calcPlayCountDeviationPenalty', () => {
+  it('penalizes deviation from absolute target match count without dilution', () => {
+    const players = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => makePlayer(id, 3));
+    // Candidate playing a, b, c, d (e, f on bench)
+    const candidate = makeCandidate([
+      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
+    ], ['e', 'f']);
+
+    const penalty = calcPlayCountDeviationPenalty(candidate, [], players, 0, 1);
+    expect(penalty).toBeGreaterThan(0);
+  });
+});
+
+describe('calcMaxMinSpreadPenalty', () => {
+  it('returns 0 when spread is <= 1 among same stamina players', () => {
+    const players = ['a', 'b', 'c', 'd', 'e'].map((id) => makePlayer(id, 3));
+    // All have played 1 match, one will have played 2
+    const round0 = makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }], ['e']);
+    // Candidate puts e in the game -> e will have played 1, others 1 or 2 (spread = 1)
+    const candidate = makeCandidate([
+      { courtIndex: 0, team1: ['e', 'b'], team2: ['c', 'd'] },
+    ], ['a']);
+
+    const penalty = calcMaxMinSpreadPenalty(candidate, [round0], players);
+    expect(penalty).toBe(0);
+  });
+
+  it('penalizes heavily when spread is >= 2', () => {
+    const players = ['a', 'b', 'c', 'd', 'e'].map((id) => makePlayer(id, 3));
+    // Round 0 and 1: 'e' benched both times! So a,b,c,d played 2, e played 0.
+    const round0 = makeRound(0, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }], ['e']);
+    const round1 = makeRound(1, [{ courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] }], ['e']);
+
+    // Bad candidate: benches 'e' a 3rd time! (a,b,c,d will be 3, e will be 0 -> diff=3)
+    const badCandidate = makeCandidate([
+      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'd'] },
+    ], ['e']);
+
+    // Good candidate: plays 'e'! (a,b,c will be 3, d will be 2, e will be 1 -> diff=2)
+    const betterCandidate = makeCandidate([
+      { courtIndex: 0, team1: ['a', 'b'], team2: ['c', 'e'] },
+    ], ['d']);
+
+    const badPenalty = calcMaxMinSpreadPenalty(badCandidate, [round0, round1], players);
+    const betterPenalty = calcMaxMinSpreadPenalty(betterCandidate, [round0, round1], players);
+
+    // Bad candidate (diff = 3): (3 - 1)^2 = 4
+    expect(badPenalty).toBe(4);
+    // Better candidate (diff = 2): (2 - 1)^2 = 1
+    expect(betterPenalty).toBe(1);
+    expect(badPenalty).toBeGreaterThan(betterPenalty);
   });
 });
 
@@ -181,7 +232,7 @@ describe('calcConsecutiveRestPenalty', () => {
 });
 
 describe('scoreCandidate', () => {
-  it('returns valid score with dynamic decay applied', () => {
+  it('returns valid score with dynamic decay and play count fairness applied', () => {
     const players = [
       makePlayer('a', 5),
       makePlayer('b', 3),
