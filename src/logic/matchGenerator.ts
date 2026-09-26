@@ -255,6 +255,18 @@ export function generateRound(
   };
 }
 
+export interface ProgressiveProgress {
+  current: number;
+  total: number;
+  roundNumber: number;
+}
+
+export interface ProgressiveGenerationOptions {
+  timeBudgetMs?: number;
+  onRoundStart?: (progress: ProgressiveProgress) => void;
+  onRoundGenerated?: (round: Round, progress: ProgressiveProgress) => void;
+}
+
 /**
  * Generate multiple rounds progressively, yielding each round to the UI as it completes.
  */
@@ -265,10 +277,7 @@ export async function generateMultipleRoundsProgressive(
   allPlayers: Player[],
   startRoundIndex: number,
   count: number,
-  options?: {
-    timeBudgetMs?: number;
-    onRoundGenerated?: (round: Round, progress: { current: number; total: number }) => void;
-  }
+  options?: ProgressiveGenerationOptions
 ): Promise<Round[]> {
   const rounds: Round[] = [];
   const cumulativeHistory = [...historyRounds];
@@ -276,7 +285,17 @@ export async function generateMultipleRoundsProgressive(
 
   for (let i = 0; i < count; i++) {
     const roundIndex = startRoundIndex + i;
+    const current = i + 1;
+    const roundNumber = roundIndex + 1;
+    const progress: ProgressiveProgress = { current, total: count, roundNumber };
 
+    // 1. Notify that this round is now being generated/evaluated
+    options?.onRoundStart?.(progress);
+
+    // Yield control so browser paints the updated progress heading before heavy optimization
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // 2. Generate the round
     const round = await generateRoundAsync(
       activePlayers,
       courtCount,
@@ -290,8 +309,8 @@ export async function generateMultipleRoundsProgressive(
     rounds.push(round);
     cumulativeHistory.push(round);
 
-    // Notify callback immediately with this single round and progress
-    options?.onRoundGenerated?.(round, { current: i + 1, total: count });
+    // 3. Notify callback immediately with this single round and progress
+    options?.onRoundGenerated?.(round, progress);
 
     // Yield control to the browser to render the newly added round
     await new Promise((resolve) => setTimeout(resolve, 0));

@@ -10,6 +10,7 @@ import {
 } from '../logic/constants';
 import {
   generateMultipleRoundsProgressive,
+  ProgressiveProgress,
 } from '../logic/matchGenerator';
 
 // Helper to create initial default player list (1 to N)
@@ -33,7 +34,7 @@ export function useMatchSession() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generationProgress, setGenerationProgress] = useState<{ current: number; total: number } | null>(null);
+  const [generationProgress, setGenerationProgress] = useState<ProgressiveProgress | null>(null);
 
   // Target round index for regeneration modal
   const [regeneratingRoundIndex, setRegeneratingRoundIndex] = useState<number | null>(null);
@@ -89,7 +90,11 @@ export function useMatchSession() {
   const handleGenerateNext = useCallback(async () => {
     if (!canGenerate || isGenerating) return;
     setIsGenerating(true);
-    setGenerationProgress({ current: 1, total: lookaheadCount });
+    setGenerationProgress({
+      current: 1,
+      total: lookaheadCount,
+      roundNumber: rounds.length + 1,
+    });
 
     try {
       await generateMultipleRoundsProgressive(
@@ -101,9 +106,11 @@ export function useMatchSession() {
         lookaheadCount,
         {
           timeBudgetMs: TIME_BUDGET_PER_ROUND_MS,
-          onRoundGenerated: (round, progress) => {
-            setRounds((prev) => [...prev, round]);
+          onRoundStart: (progress) => {
             setGenerationProgress(progress);
+          },
+          onRoundGenerated: (round) => {
+            setRounds((prev) => [...prev, round]);
           },
         }
       );
@@ -129,7 +136,11 @@ export function useMatchSession() {
 
       // Set to prior history, then add progressive rounds
       setRounds(historyBefore);
-      setGenerationProgress({ current: 1, total: count });
+      setGenerationProgress({
+        current: 1,
+        total: count,
+        roundNumber: fromRoundIndex + 1,
+      });
 
       try {
         await generateMultipleRoundsProgressive(
@@ -141,9 +152,11 @@ export function useMatchSession() {
           count,
           {
             timeBudgetMs: TIME_BUDGET_PER_ROUND_MS,
-            onRoundGenerated: (round, progress) => {
-              setRounds((prev) => [...prev, round]);
+            onRoundStart: (progress) => {
               setGenerationProgress(progress);
+            },
+            onRoundGenerated: (round) => {
+              setRounds((prev) => [...prev, round]);
             },
           }
         );
@@ -194,7 +207,11 @@ export function useMatchSession() {
     }
 
     setRounds(historyBeforeAndTarget);
-    setGenerationProgress({ current: 1, total: subsequentCount });
+    setGenerationProgress({
+      current: 1,
+      total: subsequentCount,
+      roundNumber: roundIndex + 2,
+    });
 
     try {
       await generateMultipleRoundsProgressive(
@@ -206,9 +223,11 @@ export function useMatchSession() {
         subsequentCount,
         {
           timeBudgetMs: TIME_BUDGET_PER_ROUND_MS,
-          onRoundGenerated: (round, progress) => {
-            setRounds((prev) => [...prev, round]);
+          onRoundStart: (progress) => {
             setGenerationProgress(progress);
+          },
+          onRoundGenerated: (round) => {
+            setRounds((prev) => [...prev, round]);
           },
         }
       );

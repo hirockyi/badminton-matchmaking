@@ -4,7 +4,7 @@ interface LoadingOverlayProps {
   isOpen: boolean;
   message?: string;
   subMessage?: string;
-  progress?: { current: number; total: number } | null;
+  progress?: { current: number; total: number; roundNumber?: number } | null;
 }
 
 export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
@@ -19,6 +19,12 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
     ? Math.round((progress.current / progress.total) * 100)
     : null;
 
+  const titleText = progress
+    ? progress.roundNumber && progress.roundNumber !== progress.current
+      ? `第 ${progress.roundNumber} 試合目を最適化中 (${progress.current} / ${progress.total})`
+      : `第 ${progress.current} / ${progress.total} 試合目を最適化中`
+    : message;
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 flex flex-col items-center text-center max-w-xs w-full space-y-4">
@@ -31,9 +37,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
         {/* Text & Progress */}
         <div className="space-y-2 w-full">
           <h3 className="text-base font-extrabold text-slate-900">
-            {progress
-              ? `第 ${progress.current} / ${progress.total} 試合目を最適化中`
-              : message}
+            {titleText}
           </h3>
 
           {/* Progress Bar (when multiple rounds are generating) */}
