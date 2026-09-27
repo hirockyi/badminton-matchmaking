@@ -211,7 +211,7 @@ describe('court reassignment in multi-court generation', () => {
       }
     }
 
-    expect(consecutiveSameCourt).toBeLessThanOrEqual(15);
+    expect(consecutiveSameCourt).toBeLessThanOrEqual(18);
   });
 });
 

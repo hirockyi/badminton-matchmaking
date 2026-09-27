@@ -126,12 +126,12 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
                 isEditing
                   ? 'border-blue-400 ring-2 ring-blue-100 bg-blue-50/20'
                   : isEvenRound
-                    ? 'bg-slate-100 border-slate-300/90 hover:border-slate-400'
+                    ? 'bg-slate-200/90 border-slate-300 hover:border-slate-400'
                     : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
               {/* Round Header (Compact) */}
-              <div className={`flex items-center justify-between pb-1 border-b ${isEvenRound ? 'border-slate-200' : 'border-slate-100'}`}>
+              <div className={`flex items-center justify-between pb-1 border-b ${isEvenRound ? 'border-slate-300' : 'border-slate-100'}`}>
                 <div className="flex items-center gap-1.5">
                   <span className={`w-2.5 h-2.5 rounded-full ${isEvenRound ? 'bg-teal-600' : 'bg-emerald-500'}`}></span>
                   <span className="font-black text-slate-900 text-sm sm:text-base">
@@ -146,7 +146,11 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
                       <button
                         type="button"
                         onClick={() => handleStartEdit(round)}
-                        className="text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-0.5"
+                        className={`text-xs px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-0.5 ${
+                          isEvenRound
+                            ? 'text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 shadow-2xs'
+                            : 'text-slate-700 bg-slate-100 hover:bg-slate-200 active:bg-slate-300'
+                        }`}
                       >
                         <span>✏️</span> 変更
                       </button>
@@ -155,7 +159,11 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
                         onClick={() => onOpenRegenerateModal(round.roundIndex)}
                         disabled={isGenerating}
                         title={isLastRound ? 'コート・メンバーを変更して再抽選' : 'コート・メンバーを変更して以降を再抽選'}
-                        className="text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200/60 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                        className={`text-xs px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1 shadow-2xs disabled:opacity-50 ${
+                          isEvenRound
+                            ? 'text-emerald-900 bg-white hover:bg-emerald-50 border border-emerald-300'
+                            : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200/60'
+                        }`}
                       >
                         <span>🔄</span>
                         {isLastRound ? '再抽選' : '以降を再抽選'}
@@ -239,12 +247,12 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
                       /* Ultra Compact 1-Line Display with Inline Court Badge */
                       <div className={`flex items-center gap-2 py-1 px-2 rounded-lg border ${
                         isEvenRound
-                          ? 'bg-white border-slate-200/90 shadow-2xs'
-                          : 'bg-slate-50 border-slate-100'
+                          ? 'bg-white border-slate-300 shadow-xs'
+                          : 'bg-slate-50 border-slate-200/70'
                       }`}>
                         {currentRoundData.matches.length > 1 && (
                           <span className={`text-[11px] font-black px-1.5 py-0.5 rounded shrink-0 ${
-                            isEvenRound ? 'bg-slate-200 text-slate-800' : 'bg-slate-200 text-slate-700'
+                            isEvenRound ? 'bg-slate-100 text-slate-800 border border-slate-200' : 'bg-slate-200 text-slate-700'
                           }`}>
                             C{match.courtIndex + 1}
                           </span>
@@ -269,11 +277,11 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
               {/* Bench & Edit Actions Footer (Compact 1-Line) */}
               <div className="flex items-center justify-between pt-0.5 text-xs sm:text-sm text-slate-600">
                 <div className="truncate flex-1 pr-2">
-                  <span className={`font-bold ${isEvenRound ? 'text-slate-500' : 'text-slate-400'}`}>💤 休憩:</span>{' '}
+                  <span className={`font-bold ${isEvenRound ? 'text-slate-600' : 'text-slate-400'}`}>💤 休憩:</span>{' '}
                   {benchNames.length > 0 ? (
-                    <span className="font-bold text-slate-800">{benchNames.join(', ')}</span>
+                    <span className={`font-bold ${isEvenRound ? 'text-slate-900' : 'text-slate-800'}`}>{benchNames.join(', ')}</span>
                   ) : (
-                    <span className="text-slate-400">全員出場</span>
+                    <span className={isEvenRound ? 'text-slate-500' : 'text-slate-400'}>全員出場</span>
                   )}
                 </div>
 
