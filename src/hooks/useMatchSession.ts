@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Player, Round } from '../logic/types';
 import {
   DEFAULT_STAMINA,
@@ -54,6 +54,22 @@ export function useMatchSession() {
   const disabledReason = !canGenerate
     ? `最低 ${PLAYERS_PER_COURT} 人の参加者が必要です（現在 ${activePlayers.length} 人）`
     : undefined;
+
+  // Prevent accidental reload or tab close when match rounds exist
+  useEffect(() => {
+    if (rounds.length === 0) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [rounds.length]);
 
   /**
    * Handle initial setup court count change (auto-scales players to 4x courts)
