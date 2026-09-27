@@ -124,6 +124,7 @@ export const RegenerateModal: React.FC<RegenerateModalProps> = ({
               onAddPlayer={handleAddPlayer}
               maxHeightClass="max-h-[40vh]"
               showJoinedRoundBadge={true}
+              courtCount={draftCourtCount}
             />
           </div>
         </div>

@@ -50,6 +50,7 @@ export const InitialSetup: React.FC<InitialSetupProps> = ({
           onAddPlayer={onAddPlayer}
           maxHeightClass="max-h-[52vh]"
           showJoinedRoundBadge={false}
+          courtCount={courtCount}
         />
       </div>
 

@@ -1,6 +1,7 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { Player, StaminaLevel } from '../../logic/types';
 import { HeartRating } from './HeartRating';
+import { calcDynamicTargetPlayRates } from '../../logic/scoring';
 
 interface PlayerListEditorProps {
   players: Player[];
@@ -8,6 +9,7 @@ interface PlayerListEditorProps {
   onAddPlayer: () => void;
   maxHeightClass?: string;
   showJoinedRoundBadge?: boolean;
+  courtCount?: number;
 }
 
 export const PlayerListEditor: React.FC<PlayerListEditorProps> = ({
@@ -16,8 +18,24 @@ export const PlayerListEditor: React.FC<PlayerListEditorProps> = ({
   onAddPlayer,
   maxHeightClass = 'max-h-[52vh]',
   showJoinedRoundBadge = false,
+  courtCount = 1,
 }) => {
-  const activeCount = players.filter((p) => p.active).length;
+  const activePlayers = useMemo(() => players.filter((p) => p.active), [players]);
+  const activeCount = activePlayers.length;
+
+  // Show target play rates only when at least one active player's stamina is changed from default (3)
+  const hasCustomStamina = useMemo(
+    () => activePlayers.some((p) => p.stamina !== 3),
+    [activePlayers]
+  );
+
+  const targetRatesMap = useMemo(() => {
+    if (!hasCustomStamina || activePlayers.length === 0) {
+      return new Map<string, number>();
+    }
+    return calcDynamicTargetPlayRates(activePlayers, courtCount);
+  }, [hasCustomStamina, activePlayers, courtCount]);
+
   const listEndRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(players.length);
 
@@ -41,11 +59,16 @@ export const PlayerListEditor: React.FC<PlayerListEditorProps> = ({
     <div className="space-y-3">
       {/* Header Bar */}
       <div className="flex justify-between items-center px-0.5">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <span className="text-base sm:text-lg font-extrabold text-slate-800">👥 参加プレイヤー</span>
           <span className="text-xs sm:text-sm bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full transition-all">
             {activeCount} 人
           </span>
+          {hasCustomStamina && (
+            <span className="text-[11px] sm:text-xs bg-rose-50 border border-rose-200 text-rose-700 font-bold px-2 py-0.5 rounded-full transition-all animate-in fade-in">
+              目標出場率 連動中
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -85,13 +108,20 @@ export const PlayerListEditor: React.FC<PlayerListEditorProps> = ({
               )}
             </div>
 
-            {/* Stamina Hearts Component */}
-            <HeartRating
-              value={player.stamina}
-              onChange={(level: StaminaLevel) => updatePlayer(player.id, { stamina: level })}
-              disabled={!player.active}
-              size="md"
-            />
+            {/* Stamina Hearts Component & Target Play Rate */}
+            <div className="flex flex-col items-center shrink-0">
+              <HeartRating
+                value={player.stamina}
+                onChange={(level: StaminaLevel) => updatePlayer(player.id, { stamina: level })}
+                disabled={!player.active}
+                size="md"
+              />
+              {hasCustomStamina && player.active && targetRatesMap.has(player.id) && (
+                <span className="text-[10px] font-extrabold text-rose-600 bg-rose-50 border border-rose-200/80 rounded px-1.5 py-0.2 mt-0.5 tracking-tight shadow-3xs">
+                  目標 {Math.round((targetRatesMap.get(player.id) ?? 0) * 100)}%
+                </span>
+              )}
+            </div>
 
             {/* Active Toggle */}
             <button

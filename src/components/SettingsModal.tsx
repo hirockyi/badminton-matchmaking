@@ -63,6 +63,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onAddPlayer={onAddPlayer}
               maxHeightClass="max-h-[42vh]"
               showJoinedRoundBadge={true}
+              courtCount={courtCount}
             />
           </div>
         </div>

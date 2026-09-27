@@ -109,7 +109,7 @@ export default function App() {
 
               {/* Statistics Card */}
               <section className="bg-white rounded-2xl shadow-sm border border-slate-200/90 p-3.5">
-                <Statistics players={players} rounds={rounds} />
+                <Statistics players={players} rounds={rounds} courtCount={courtCount} />
               </section>
             </>
           )}

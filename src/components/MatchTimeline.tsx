@@ -117,20 +117,23 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
             .filter(Boolean);
 
           const isLastRound = round.roundIndex === rounds.length - 1;
+          const isEvenRound = (round.roundIndex + 1) % 2 === 0;
 
           return (
             <div
               key={round.roundIndex}
-              className={`bg-white border rounded-xl p-2.5 shadow-xs transition-all ${
+              className={`border rounded-xl p-2.5 shadow-xs transition-all ${
                 isEditing
                   ? 'border-blue-400 ring-2 ring-blue-100 bg-blue-50/20'
-                  : 'border-slate-200 hover:border-slate-300'
+                  : isEvenRound
+                    ? 'bg-slate-100 border-slate-300/90 hover:border-slate-400'
+                    : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
               {/* Round Header (Compact) */}
-              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+              <div className={`flex items-center justify-between pb-1 border-b ${isEvenRound ? 'border-slate-200' : 'border-slate-100'}`}>
                 <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                  <span className={`w-2.5 h-2.5 rounded-full ${isEvenRound ? 'bg-teal-600' : 'bg-emerald-500'}`}></span>
                   <span className="font-black text-slate-900 text-sm sm:text-base">
                     第 {round.roundIndex + 1} 試合
                   </span>
@@ -234,9 +237,15 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
                       </div>
                     ) : (
                       /* Ultra Compact 1-Line Display with Inline Court Badge */
-                      <div className="flex items-center gap-2 py-1 px-2 rounded-lg bg-slate-50 border border-slate-100">
+                      <div className={`flex items-center gap-2 py-1 px-2 rounded-lg border ${
+                        isEvenRound
+                          ? 'bg-white border-slate-200/90 shadow-2xs'
+                          : 'bg-slate-50 border-slate-100'
+                      }`}>
                         {currentRoundData.matches.length > 1 && (
-                          <span className="text-[11px] font-black bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded shrink-0">
+                          <span className={`text-[11px] font-black px-1.5 py-0.5 rounded shrink-0 ${
+                            isEvenRound ? 'bg-slate-200 text-slate-800' : 'bg-slate-200 text-slate-700'
+                          }`}>
                             C{match.courtIndex + 1}
                           </span>
                         )}
@@ -260,7 +269,7 @@ export const MatchTimeline: React.FC<MatchTimelineProps> = ({
               {/* Bench & Edit Actions Footer (Compact 1-Line) */}
               <div className="flex items-center justify-between pt-0.5 text-xs sm:text-sm text-slate-600">
                 <div className="truncate flex-1 pr-2">
-                  <span className="font-bold text-slate-400">💤 休憩:</span>{' '}
+                  <span className={`font-bold ${isEvenRound ? 'text-slate-500' : 'text-slate-400'}`}>💤 休憩:</span>{' '}
                   {benchNames.length > 0 ? (
                     <span className="font-bold text-slate-800">{benchNames.join(', ')}</span>
                   ) : (

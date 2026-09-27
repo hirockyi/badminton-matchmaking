@@ -1,14 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Player, Round } from '../logic/types';
 import { HeartRating } from './common/HeartRating';
+import { calcDynamicTargetPlayRates } from '../logic/scoring';
 
 interface StatisticsProps {
   players: Player[];
   rounds: Round[];
+  courtCount?: number;
 }
 
-export const Statistics: React.FC<StatisticsProps> = ({ players, rounds }) => {
+export const Statistics: React.FC<StatisticsProps> = ({ players, rounds, courtCount }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+
+  const activePlayers = useMemo(() => players.filter((p) => p.active), [players]);
+  const hasCustomStamina = useMemo(
+    () => activePlayers.some((p) => p.stamina !== 3),
+    [activePlayers]
+  );
+  const targetRatesMap = useMemo(() => {
+    if (!hasCustomStamina || !courtCount) return new Map<string, number>();
+    return calcDynamicTargetPlayRates(activePlayers, courtCount);
+  }, [hasCustomStamina, activePlayers, courtCount]);
 
   if (rounds.length === 0) {
     return (
@@ -126,9 +138,16 @@ export const Statistics: React.FC<StatisticsProps> = ({ players, rounds }) => {
                   <td className="px-2.5 py-3 text-center text-slate-500">{stat.gamesAvailable}</td>
                   <td className="px-2.5 py-3 text-center font-extrabold">
                     {stat.playRate !== null ? (
-                      <span className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded-md text-xs sm:text-sm font-extrabold">
-                        {stat.playRate}%
-                      </span>
+                      <div>
+                        <span className="bg-slate-100 text-slate-800 px-2.5 py-1 rounded-md text-xs sm:text-sm font-extrabold">
+                          {stat.playRate}%
+                        </span>
+                        {hasCustomStamina && stat.active && targetRatesMap.has(stat.id) && (
+                          <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                            目標 {Math.round((targetRatesMap.get(stat.id) ?? 0) * 100)}%
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       '-'
                     )}
